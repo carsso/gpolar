@@ -259,7 +259,7 @@ $stats    = $me['stats'] ?? [];
 <?php endif; ?>
 
 <!-- ── Debug panel ── -->
-<div class="fixed bottom-4 right-4 z-50">
+<div class="konami-gate fixed bottom-4 right-4 z-50">
   <button onclick="this.nextElementSibling.classList.toggle('hidden')"
     class="bg-gray-800 text-gray-300 text-xs px-3 py-1.5 rounded-lg shadow-lg hover:bg-gray-700 transition-colors">
     🐛 Debug

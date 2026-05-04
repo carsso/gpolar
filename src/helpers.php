@@ -65,6 +65,14 @@ function weatherIcon(string $c): string
     };
 }
 
+function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
+{
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLon = deg2rad($lon2 - $lon1);
+    $a    = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
+    return 6371 * 2 * asin(sqrt($a));
+}
+
 function dayNum(int $stepTs, int $tripStart): int
 {
     return max(1, (int) floor(($stepTs - $tripStart) / 86400) + 1);
@@ -165,10 +173,30 @@ function htmlHead(string $title, bool $withLeaflet = false): string
     .photo-scroll{scrollbar-width:thin;scrollbar-color:#4b5563 transparent}
     .photo-scroll::-webkit-scrollbar{height:4px}
     .photo-scroll::-webkit-scrollbar-thumb{background:#4b5563;border-radius:2px}
-    .step-card{scroll-margin-top:1rem}
+    .step-card{scroll-margin-top:9.5rem}
     #lightbox{display:none}
     #lightbox.open{display:flex}
+    .konami-gate{display:none}
+    .map-sat{filter:brightness(.4)}
+    #map::after{content:'';position:absolute;inset:0;background:rgba(0,8,40,.75);pointer-events:none;z-index:300}
+    .leaflet-bar a,.leaflet-bar a:hover{background:#1f2937;color:#e5e7eb;border-color:#374151}
+    .leaflet-bar a:hover{background:#374151;color:#f59e0b}
+    .leaflet-bar{border:none;box-shadow:0 2px 8px rgba(0,0,0,.6)}
+    .leaflet-control-layers{background:#1f2937;border:1px solid #374151;box-shadow:0 2px 8px rgba(0,0,0,.6);color:#d1d5db;border-radius:.75rem;padding:.25rem}
+    .leaflet-control-layers-separator{border-color:#374151}
+    .leaflet-control-attribution{background:rgba(17,24,39,.75)!important;color:#6b7280;font-size:10px}
+    .leaflet-control-attribution a{color:#9ca3af}
   </style>
+  <script>
+  (function(){
+    const SEQ=['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+    let idx=0;
+    document.addEventListener('keydown',function(e){
+      if(e.key===SEQ[idx]){idx++;if(idx===SEQ.length){idx=0;document.querySelectorAll('.konami-gate').forEach(el=>el.style.display='block');}}
+      else idx=e.key===SEQ[0]?1:0;
+    });
+  })();
+  </script>
 </head>
 <body class="bg-gray-950 min-h-screen text-gray-100 antialiased">
 HTML;

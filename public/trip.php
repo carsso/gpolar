@@ -25,7 +25,7 @@ function dbg(string $label, mixed $value = null): void {
 
 try {
     $trip = $client->getTrip($tripId);
-    dbg('getTrip() OK', 'keys: ' . implode(', ', array_keys($trip)));
+    dbg('getTrip() OK', count($trip['steps'] ?? []) . ' steps');
 } catch (\Throwable $e) {
     $error = $e->getMessage();
     dbg('getTrip() FAIL', $e->getMessage());
@@ -43,11 +43,15 @@ $usersMap = [];
 foreach ($trip['users'] ?? [] as $u) {
     if (!empty($u['uuid'])) $usersMap[$u['uuid']] = $u;
 }
-usort($steps, fn($a, $b) =>
-    $sortOrder === 'desc'
-        ? parseTs($b['start_time']) <=> parseTs($a['start_time'])
-        : parseTs($a['start_time']) <=> parseTs($b['start_time'])
-);
+// Assign permanent chronological step numbers before display sort
+usort($steps, fn($a, $b) => parseTs($a['start_time']) <=> parseTs($b['start_time']));
+foreach ($steps as $chrono => &$step) { $step['_num'] = $chrono + 1; }
+unset($step);
+$stepsChronological = $steps; // kept for map — always start→end regardless of display order
+
+if ($sortOrder === 'desc') {
+    usort($steps, fn($a, $b) => parseTs($b['start_time']) <=> parseTs($a['start_time']));
+}
 
 $user       = $trip['user'] ?? [];
 $tripStart  = parseTs($trip['start_date'] ?? 0);
@@ -75,12 +79,24 @@ foreach ($trip['trip_buddies'] ?? [] as $b) {
     }
 }
 
-// Logged-in user for nav (fetch separately so nav shows ME, not the trip owner)
+// Logged-in user for nav
 $me = [];
 try { $me = $client->getMe(); } catch (\Throwable) {}
 
 $latestStepTs = array_reduce($steps, fn($m, $s) => max($m, parseTs($s['start_time'])), 0);
 $daysOnRoad   = ($latestStepTs && $tripStart) ? dayNum($latestStepTs, $tripStart) : 0;
+
+// Distance from each step to the next (for connector line labels)
+$distToNext = [];
+$nextLat = $nextLon = null;
+for ($j = count($steps) - 1; $j >= 0; $j--) {
+    $lat = $steps[$j]['location']['lat'] ?? null;
+    $lon = $steps[$j]['location']['lon'] ?? null;
+    if ($lat !== null && $nextLat !== null) {
+        $distToNext[$j] = haversineKm((float)$lat, (float)$lon, (float)$nextLat, (float)$nextLon);
+    }
+    if ($lat !== null) { $nextLat = $lat; $nextLon = $lon; }
+}
 
 // Photos per step (for JS lightbox)
 $stepPhotosJs = [];
@@ -90,22 +106,29 @@ foreach ($steps as $i => $step) {
     foreach ($step['media'] ?? [] as $m) {
         if (($m['is_deleted'] ?? false) || empty($m['large_thumbnail_path'])) continue;
         $thumbs[]  = $m['large_thumbnail_path'];
-        $fullRes[] = $m['path'] ?? $m['cdn_path'] ?? $m['large_thumbnail_path'];
+        $fullRes[] = $m['path'] ?: ($m['cdn_path'] ?: $m['large_thumbnail_path']);
     }
     $stepPhotosJs[$i] = ['thumbs' => $thumbs, 'full' => $fullRes];
 }
 
-// Map data
-$mapSteps = [];
-foreach ($steps as $i => $step) {
-    $lat  = $step['location']['lat'] ?? null;
-    $lon  = $step['location']['lon'] ?? null;
-    $desc = trim($step['description'] ?? '');
+// Map data — always chronological so bikes always go start→end
+$mapSteps  = [];
+$stepCoords = [];
+
+foreach ($stepsChronological as $i => $step) {
+    $lat = $step['location']['lat'] ?? null;
+    $lon = $step['location']['lon'] ?? null;
+    if (!$lat || !$lon) continue;
+    $stepCoords[] = [(float)$lat, (float)$lon];
+    $desc      = trim($step['description'] ?? '');
     $hasPhotos = !empty(array_filter($step['media'] ?? [], fn($m) => !($m['is_deleted'] ?? false) && !empty($m['large_thumbnail_path'])));
-    if ($lat && $lon && ($desc || $hasPhotos)) {
+    if ($desc || $hasPhotos) {
         $mapSteps[] = ['i' => $i, 'name' => $step['display_name'] ?? $step['name'] ?? '', 'lat' => $lat, 'lon' => $lon];
     }
 }
+
+// Initial route: straight lines between steps, JS will upgrade to road routing via OSRM
+$mapRoute = $stepCoords;
 
 $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 ?>
@@ -123,7 +146,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 <?php else: ?>
 
 <!-- ── Hero ── -->
-<div class="relative h-56 sm:h-72 md:h-88 bg-gray-700 bg-cover bg-center overflow-hidden"
+<div class="relative h-36 sm:h-48 bg-gray-700 bg-cover bg-center overflow-hidden"
      style="<?= $coverPhoto ? 'background-image:url(' . esc($coverPhoto) . ')' : '' ?>">
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
   <div class="absolute bottom-0 left-0 right-0 p-5 sm:p-8">
@@ -160,7 +183,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 </div>
 
 <!-- ── Stats bar ── -->
-<div class="bg-gray-900 border-b border-gray-800 shadow-sm sticky top-14 z-20">
+<div class="bg-gray-900 border-b border-gray-800 shadow-sm sticky top-12 z-20">
   <div class="max-w-7xl mx-auto px-4">
     <div class="grid grid-cols-4 divide-x divide-gray-800">
       <?php
@@ -188,18 +211,8 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
     <!-- Steps timeline -->
     <div class="lg:w-3/5 space-y-0" id="steps-container">
       <?php
-        $toggleUrl   = '/trip/' . (int)$tripId . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
-        $toggleLabel = $sortOrder === 'asc' ? 'Plus récent en premier' : 'Plus ancien en premier';
+        $toggleUrl = '/trip/' . (int)$tripId . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
       ?>
-      <div class="flex justify-end mb-3">
-        <a href="<?= esc($toggleUrl) ?>"
-          class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-amber-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-950 border border-gray-800">
-          <svg class="w-3.5 h-3.5 <?= $sortOrder === 'desc' ? '[transform:scaleY(-1)]' : '' ?>" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9M3 12h5m8 0l4-4m0 0l-4-4m4 4H11"/>
-          </svg>
-          <?= esc($toggleLabel) ?>
-        </a>
-      </div>
       <?php
       $prevDay = null;
       foreach ($steps as $i => $step):
@@ -221,9 +234,10 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
       <?php if ($showDay): ?>
       <div class="day-sep flex items-center gap-3 pt-<?= $i === 0 ? '2' : '6' ?> pb-3 px-1">
         <div class="h-px flex-1 bg-gray-700"></div>
-        <span class="text-xs font-semibold text-gray-500 uppercase tracking-widest whitespace-nowrap">
+        <a href="<?= esc($toggleUrl) ?>" class="flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-amber-500 uppercase tracking-widest whitespace-nowrap transition-colors" title="Inverser l'ordre">
           Jour <?= $dayN ?> · <?= fmtDate(parseTs($step['start_time'])) ?>
-        </span>
+          <svg class="w-3 h-3 opacity-40 <?= $sortOrder === 'desc' ? 'rotate-180' : '' ?>" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </a>
         <div class="h-px flex-1 bg-gray-700"></div>
       </div>
       <?php endif; ?>
@@ -232,16 +246,22 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 
       <!-- Full step card -->
       <div class="step-card group relative flex gap-3 pb-6 px-1"
-           id="step-<?= $i ?>" data-step="<?= $i ?>">
+           id="step-<?= $step['_num'] - 1 ?>" data-step="<?= $step['_num'] - 1 ?>">
 
         <!-- Dot + line -->
         <div class="flex-shrink-0 flex flex-col items-center" style="width:38px">
           <button
-            onclick="flyToStep(<?= $i ?>)"
+            onclick="flyToStep(<?= $step['_num'] - 1 ?>)"
             class="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center shadow ring-4 ring-gray-900 z-10 transition-transform group-hover:scale-110 text-white text-xs font-bold"
-          ><?= $i + 1 ?></button>
+          ><?= $step['_num'] ?></button>
           <?php if (!$isLast): ?>
-          <div class="w-0.5 flex-1 bg-gradient-to-b from-amber-300 to-amber-100 mt-2 min-h-8"></div>
+          <div class="relative flex flex-col items-center mt-2 flex-1 min-h-8">
+            <div class="w-px flex-1 bg-gradient-to-b from-amber-400 to-amber-300/50"></div>
+            <?php if (isset($distToNext[$i]) && $distToNext[$i] > 0.3): ?>
+            <span class="text-[10px] text-amber-500 tabular-nums leading-none py-1"><?= round($distToNext[$i]) ?>km</span>
+            <?php endif; ?>
+            <div class="w-px flex-1 bg-gradient-to-b from-amber-300/50 to-amber-200"></div>
+          </div>
           <?php endif; ?>
         </div>
 
@@ -373,7 +393,20 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
           onclick="event.stopPropagation(); lightboxNav(-1)">‹</button>
   <img id="lightbox-img" src="" alt=""
        class="max-h-screen max-w-full object-contain px-14 select-none"
-       onclick="event.stopPropagation()">
+       onclick="event.stopPropagation()"
+       onerror="this.style.display='none';document.getElementById('lightbox-err').classList.remove('hidden')"
+       onload="this.style.display='';document.getElementById('lightbox-err').classList.add('hidden')">
+  <div id="lightbox-err" class="hidden text-center px-14">
+    <div class="text-4xl mb-3">🚫</div>
+    <p class="text-white/50 text-sm">Image non disponible</p>
+  </div>
+  <a id="lightbox-dl" href="" download target="_blank" onclick="event.stopPropagation()"
+     class="absolute top-4 left-5 text-white/40 hover:text-white transition-colors"
+     title="Télécharger l'original">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+    </svg>
+  </a>
   <button class="absolute right-2 sm:right-5 text-white/60 hover:text-white text-5xl px-2 py-6"
           onclick="event.stopPropagation(); lightboxNav(1)">›</button>
   <div id="lightbox-counter" class="absolute bottom-4 text-white/40 text-sm"></div>
@@ -384,18 +417,207 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 <script>
 const STEP_PHOTOS = <?= json_encode($stepPhotosJs, $jsonFlags) ?>;
 const MAP_STEPS   = <?= json_encode($mapSteps,    $jsonFlags) ?>;
+const MAP_ROUTE   = <?= json_encode($mapRoute,    $jsonFlags) ?>;
 
-<?php if (!$error && !empty($mapSteps)): ?>
+<?php if (!$error && !empty($mapRoute)): ?>
 // ── Map ───────────────────────────────────────────────────────────────────────
 const map = L.map('map');
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, © <a href="https://carto.com/">CARTO</a>',
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: '© <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics',
   maxZoom: 19,
+  className: 'map-sat',
+}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+  attribution: '',
+  maxZoom: 19,
+  pane: 'shadowPane',
 }).addTo(map);
 
-const latlngs = MAP_STEPS.map(s => [s.lat, s.lon]);
+const routeLine = L.polyline(MAP_ROUTE, { color: '#f59e0b', weight: 3, opacity: 0.5, dashArray: '6 6' }).addTo(map);
 
-L.polyline(latlngs, { color: '#f59e0b', weight: 3, opacity: 0.8, dashArray: '8 8' }).addTo(map);
+// Animate bikes along the route in a loop, 33% apart
+function startBikeAnimation(latlngs) {
+  if (latlngs.length < 2) return;
+  const TARGET_PX_S = 80;  // screen pixels per second — constant regardless of zoom
+  const OFFSET_PX   = 14;
+  const LOOKAHEAD   = 20;
+
+  // Pre-simplify: keep only points >= 0.003° apart to remove micro-jitter
+  const route = [latlngs[0]];
+  for (const p of latlngs) {
+    const last = route[route.length - 1];
+    if (Math.hypot(p[0]-last[0], p[1]-last[1]) >= 0.003) route.push(p);
+  }
+  if (route.length < 2) return;
+
+  const svgBike = `<svg viewBox="0 0 30 18" width="22" height="13" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="5" cy="13" r="4.5"/>
+      <circle cx="25" cy="13" r="4.5"/>
+      <polyline points="5,13 13,13 12,6 5,13"/>
+      <polyline points="12,6 20,6 13,13"/>
+      <line x1="20" y1="6" x2="25" y2="13"/>
+      <line x1="12" y1="6" x2="12" y2="3"/>
+      <line x1="10" y1="3" x2="14" y2="3"/>
+      <line x1="20" y1="6" x2="21" y2="3"/>
+      <line x1="19" y1="3" x2="23" y2="3"/>
+    </g>
+  </svg>`;
+
+  // Pixel-simplified route and segment lengths — rebuilt on every zoom
+  const MIN_SEG_PX = 4;
+  let pxRoute    = route.slice();
+  let segPxLens  = [];
+  let totalPxLen = 1;
+
+  function rebuildPxRoute() {
+    // Keep only points >= MIN_SEG_PX apart in screen space
+    pxRoute = [route[0]];
+    let lastP = map.latLngToContainerPoint(L.latLng(route[0][0], route[0][1]));
+    for (let i = 1; i < route.length; i++) {
+      const p = map.latLngToContainerPoint(L.latLng(route[i][0], route[i][1]));
+      if (Math.hypot(p.x - lastP.x, p.y - lastP.y) >= MIN_SEG_PX) {
+        pxRoute.push(route[i]);
+        lastP = p;
+      }
+    }
+    if (pxRoute[pxRoute.length - 1] !== route[route.length - 1])
+      pxRoute.push(route[route.length - 1]);
+    // Recompute segment lengths on the simplified route
+    segPxLens  = [];
+    totalPxLen = 0;
+    for (let i = 0; i < pxRoute.length - 1; i++) {
+      const p1 = map.latLngToContainerPoint(L.latLng(pxRoute[i][0],   pxRoute[i][1]));
+      const p2 = map.latLngToContainerPoint(L.latLng(pxRoute[i+1][0], pxRoute[i+1][1]));
+      const d  = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      segPxLens.push(d);
+      totalPxLen += d;
+    }
+    if (totalPxLen === 0) totalPxLen = 1;
+  }
+
+  function updateBikeCount() {
+    const n = Math.max(1, Math.min(6, Math.floor(totalPxLen / 160)));
+    bikes.forEach((b, idx) => {
+      b.active = idx < n;
+      if (b.active) b.phase = idx / n;  // redistribute evenly, no gap
+      b.marker.setOpacity(b.active ? 1 : 0);
+    });
+  }
+
+  rebuildPxRoute();
+  map.on('zoom', () => { rebuildPxRoute(); updateBikeCount(); });
+
+  // Position along pxRoute by pixel offset; returns {latlng:[lat,lon], i:segIdx}
+  function atPx(px) {
+    const len = totalPxLen;
+    px = ((px % len) + len) % len;
+    let acc = 0;
+    for (let i = 0; i < segPxLens.length; i++) {
+      const d = segPxLens[i];
+      if (px <= acc + d) {
+        const t = (px - acc) / d;
+        return { latlng: [pxRoute[i][0] + t*(pxRoute[i+1][0]-pxRoute[i][0]),
+                           pxRoute[i][1] + t*(pxRoute[i+1][1]-pxRoute[i][1])], i };
+      }
+      acc += d;
+    }
+    return { latlng: pxRoute[pxRoute.length - 1], i: pxRoute.length - 2 };
+  }
+
+  // Find the first pxRoute point >= LOOKAHEAD px away (adapts to zoom)
+  function nextStablePoint(posLL, fromIdx) {
+    const p0 = map.latLngToContainerPoint(L.latLng(posLL[0], posLL[1]));
+    for (let j = fromIdx + 1; j < pxRoute.length; j++) {
+      const p = map.latLngToContainerPoint(L.latLng(pxRoute[j][0], pxRoute[j][1]));
+      if (Math.hypot(p.x - p0.x, p.y - p0.y) >= LOOKAHEAD) return pxRoute[j];
+    }
+    return pxRoute[pxRoute.length - 1];
+  }
+
+  // Compute lateral offset position and rotation angle in px space
+  function computePosAngle(posLL, nextLL, side) {
+    const p1  = map.latLngToContainerPoint(L.latLng(posLL[0], posLL[1]));
+    const p2  = map.latLngToContainerPoint(L.latLng(nextLL[0], nextLL[1]));
+    const dx  = p2.x - p1.x, dy = p2.y - p1.y;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const off = map.containerPointToLatLng(L.point(p1.x + (-dy/len)*OFFSET_PX*side, p1.y + (dx/len)*OFFSET_PX*side));
+    return { latlng: off, angle: Math.atan2(dy, dx) * 180 / Math.PI };
+  }
+
+  function bikeTransform(angle, flipY) {
+    let t;
+    if (Math.abs(angle) > 90) {
+      const a = angle > 0 ? -(angle - 180) : -(angle + 180);
+      t = `scaleX(-1) rotate(${a.toFixed(1)}deg)`;
+    } else {
+      t = `rotate(${angle.toFixed(1)}deg)`;
+    }
+    if (flipY) t += ' scaleY(-1)';
+    return t;
+  }
+
+  const bikeConfigs = [
+    { phase: 0/6, side: +1 }, { phase: 1/6, side: -1 },
+    { phase: 2/6, side: +1 }, { phase: 3/6, side: -1 },
+    { phase: 4/6, side: +1 }, { phase: 5/6, side: -1 },
+  ];
+
+  const bikes = bikeConfigs.map(({ phase, side }) => {
+    const el = document.createElement('div');
+    el.style.cssText = 'user-select:none;pointer-events:none;transform-origin:center;line-height:0';
+    el.innerHTML = svgBike;
+    const marker = L.marker(route[0], {
+      icon: L.divIcon({ className: '', html: el, iconSize: [22, 13], iconAnchor: [11, 6] }),
+      interactive: false, zIndexOffset: 500
+    }).addTo(map);
+    return { marker, el, phase, side, active: true };
+  });
+  updateBikeCount();
+
+  let lastTs   = null;
+  let pxOffset = 0;
+  function tick(ts) {
+    if (lastTs !== null) {
+      // Cap speed so one full loop takes at least 12 seconds
+      const speed = Math.min(TARGET_PX_S, totalPxLen / 12);
+      pxOffset += speed * (ts - lastTs) / 1000;
+    }
+    lastTs = ts;
+    const len = totalPxLen || 1;
+    for (const b of bikes) {
+      if (!b.active) continue;
+      const bPx                = (pxOffset + b.phase * len) % len;
+      const { latlng: pos, i } = atPx(bPx);
+      const next               = nextStablePoint(pos, i);
+      const { latlng, angle }  = computePosAngle(pos, next, b.side);
+      b.marker.setLatLng(latlng);
+      const belowRoute = Math.abs(angle) < 90 ? (b.side === 1) : (b.side === -1);
+      b.el.style.transform = bikeTransform(angle, belowRoute);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// Upgrade to road routing via OSRM then start bike animation
+(async () => {
+  const waypoints = MAP_STEPS.map(s => [s.lat, s.lon]);
+  if (waypoints.length < 2) { startBikeAnimation(MAP_ROUTE); return; }
+  const routed = [];
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const [la, lo] = waypoints[i];
+    const [lb, lr] = waypoints[i + 1];
+    try {
+      const res  = await fetch(`https://router.project-osrm.org/route/v1/bike/${lo},${la};${lr},${lb}?overview=full&geometries=geojson`);
+      const data = await res.json();
+      const coords = data?.routes?.[0]?.geometry?.coordinates;
+      if (coords) coords.forEach(([lon, lat]) => routed.push([lat, lon]));
+    } catch {}
+  }
+  if (routed.length) routeLine.setLatLngs(routed).setStyle({ opacity: 0.8, dashArray: null });
+  startBikeAnimation(routed.length ? routed : MAP_ROUTE);
+})();
 
 const markers = MAP_STEPS.map((step, idx) => {
   const isLast = idx === MAP_STEPS.length - 1;
@@ -412,7 +634,7 @@ const markers = MAP_STEPS.map((step, idx) => {
     .on('click', () => scrollToStep(step.i));
 });
 
-map.fitBounds(latlngs, { padding: [30, 30] });
+map.fitBounds(MAP_ROUTE, { padding: [30, 30] });
 
 function flyToStep(stepIdx) {
   const s = MAP_STEPS.find(s => s.i === stepIdx);
@@ -527,15 +749,24 @@ function closeLightbox() {
   document.body.style.overflow = '';
 }
 function lightboxNav(dir) {
-  const photos = STEP_PHOTOS[lbStep]?.full ?? [];
-  lbIdx = (lbIdx + dir + photos.length) % photos.length;
+  const thumbs = STEP_PHOTOS[lbStep]?.thumbs ?? [];
+  lbIdx = (lbIdx + dir + thumbs.length) % thumbs.length;
   renderLightbox();
 }
 function renderLightbox() {
-  const photos = STEP_PHOTOS[lbStep]?.full ?? [];
-  document.getElementById('lightbox-img').src = photos[lbIdx] ?? '';
+  const thumbs = STEP_PHOTOS[lbStep]?.thumbs ?? [];
+  const full   = STEP_PHOTOS[lbStep]?.full   ?? [];
+  const src = thumbs[lbIdx] || '';
+  if (!src) { closeLightbox(); return; }
+  const img = document.getElementById('lightbox-img');
+  img.style.display = '';
+  document.getElementById('lightbox-err').classList.add('hidden');
+  img.src = src;
+  const dl = document.getElementById('lightbox-dl');
+  dl.href = full[lbIdx] || src;
+  dl.style.display = full[lbIdx] ? '' : 'none';
   document.getElementById('lightbox-counter').textContent =
-    photos.length > 1 ? `${lbIdx + 1} / ${photos.length}` : '';
+    thumbs.length > 1 ? `${lbIdx + 1} / ${thumbs.length}` : '';
 }
 document.addEventListener('keydown', e => {
   if (!document.getElementById('lightbox').classList.contains('open')) return;
@@ -550,7 +781,7 @@ document.addEventListener('keydown', e => {
 dbg('visibleSteps', $visibleSteps);
 dbg('mapSteps', count($mapSteps));
 ?>
-<div class="fixed bottom-4 right-4 z-50">
+<div class="konami-gate fixed bottom-4 right-4 z-50">
   <button onclick="this.nextElementSibling.classList.toggle('hidden')"
     class="bg-gray-800 text-gray-300 text-xs px-3 py-1.5 rounded-lg shadow-lg hover:bg-gray-700 transition-colors">
     🐛 Debug
