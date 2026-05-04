@@ -10,7 +10,7 @@ $token  = requireAuth();
 $tripId = $_GET['id'] ?? null;
 
 if (!$tripId || !ctype_digit((string) $tripId)) {
-    header('Location: /index.php');
+    header('Location: /');
     exit;
 }
 
@@ -110,7 +110,7 @@ foreach ($steps as $i => $step) {
 $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 ?>
 <?= htmlHead(esc($tripName), withLeaflet: true) ?>
-<?= htmlNav($me, backUrl: '/index.php') ?>
+<?= htmlNav($me, backUrl: '/') ?>
 
 <?php if ($error): ?>
 <div class="max-w-lg mx-auto mt-16 text-center px-4">
@@ -188,7 +188,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
     <!-- Steps timeline -->
     <div class="lg:w-3/5 space-y-0" id="steps-container">
       <?php
-        $toggleUrl   = '?id=' . (int)$tripId . '&order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
+        $toggleUrl   = '/trip/' . (int)$tripId . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
         $toggleLabel = $sortOrder === 'asc' ? 'Plus récent en premier' : 'Plus ancien en premier';
       ?>
       <div class="flex justify-end mb-3">
@@ -470,7 +470,7 @@ async function loadComments(btn, stepId) {
 
   btn.classList.add('opacity-50', 'pointer-events-none');
 
-  const res  = await fetch(`/api/comments.php?step_id=${stepId}`);
+  const res  = await fetch(`/api/comments?step_id=${stepId}`);
   const data = await res.json();
 
   btn.classList.remove('opacity-50', 'pointer-events-none');

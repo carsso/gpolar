@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Static files pass through
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# /trip/123 → trip.php?id=123
+RewriteRule ^trip/(\d+)$ trip.php?id=$1 [L,QSA]
+
+# /api/comments → api/comments.php
+RewriteRule ^api/([a-z]+)$ api/$1.php [L,QSA]
+
+# /login, /logout → login.php, logout.php
+RewriteRule ^([a-z]+)$ $1.php [L,QSA]

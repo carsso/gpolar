@@ -30,7 +30,7 @@ composer install
 ## Lancement
 
 ```bash
-php -S localhost:8000 -t public/
+php -S localhost:8000 -t public/ public/router.php
 ```
 
 Puis ouvre [http://localhost:8000](http://localhost:8000).
@@ -80,7 +80,13 @@ server {
     index index.php;
 
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files $uri $uri/ @router;
+    }
+
+    location @router {
+        rewrite ^/trip/(\d+)$   /trip.php?id=$1   last;
+        rewrite ^/api/([a-z]+)$ /api/$1.php        last;
+        rewrite ^/([a-z]+)$     /$1.php            last;
     }
 
     location ~ \.php$ {

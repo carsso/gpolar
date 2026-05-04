@@ -22,7 +22,7 @@ function requireAuth(): string
 {
     $token = getToken();
     if (!$token) {
-        header('Location: /login.php');
+        header('Location: /login');
         exit;
     }
     return $token;
@@ -98,7 +98,7 @@ function renderTripCard(array $trip, ?array $author = null): string
     $flags    = implode(' ', array_map(fn($c) => flag($c), $countries));
     $startTs  = parseTs($trip['start_date'] ?? 0);
     $date     = $startTs ? fmtDate($startTs) : '';
-    $url      = "/trip.php?id={$id}";
+    $url      = "/trip/{$id}";
 
     $coverStyle = $cover ? "background-image:url(" . esc($cover) . ")" : "background-color:#d1d5db";
     $ongoingBadge = $ongoing
@@ -195,13 +195,13 @@ function htmlNav(array $user = [], string $backUrl = ''): string
         ? '<div class="flex items-center gap-2">
              ' . $imgHtml . '
              <span class="text-sm text-gray-300 hidden sm:block">' . $name . '</span>
-             <a href="/logout.php" class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1">Déco</a>
+             <a href="/logout" class="text-xs text-gray-400 hover:text-red-500 transition-colors ml-1">Déco</a>
            </div>'
-        : '<a href="/login.php" class="text-sm text-amber-500 font-medium">Connexion</a>';
+        : '<a href="/login" class="text-sm text-amber-500 font-medium">Connexion</a>';
 
     $tripSearch = !$backUrl ? '
-      <form action="/trip.php" method="GET" class="hidden sm:flex items-center gap-1.5">
-        <input type="text" name="id" inputmode="numeric" pattern="[0-9]+" placeholder="N° de voyage…"
+      <form onsubmit="event.preventDefault();var v=this.querySelector(\'input\').value.trim();if(/^\d+$/.test(v))location=\'/trip/\'+v;" class="hidden sm:flex items-center gap-1.5">
+        <input type="text" inputmode="numeric" pattern="[0-9]+" placeholder="N° de voyage…"
           class="w-32 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:w-40 transition-all font-mono">
       </form>' : '';
 
@@ -209,7 +209,7 @@ function htmlNav(array $user = [], string $backUrl = ''): string
 <nav class="bg-gray-900 border-b border-gray-800 sticky top-0 z-30 shadow-sm">
   <div class="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <a href="/index.php" class="font-bold text-amber-500 text-lg tracking-tight">GPolar 🚴</a>
+      <a href="/" class="font-bold text-amber-500 text-lg tracking-tight">GPolar 🚴</a>
       {$back}
       {$tripSearch}
     </div>

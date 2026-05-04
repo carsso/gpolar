@@ -92,7 +92,7 @@ $totalKm = array_sum(array_map(fn($t) => $t['total_km'] ?? 0, $myTrips));
     <div class="text-4xl mb-4">😬</div>
     <h2 class="font-semibold text-gray-100 mb-2">Impossible de charger le profil</h2>
     <p class="text-sm text-gray-500 mb-6"><?= esc($error) ?></p>
-    <a href="/logout.php" class="text-sm text-amber-500 hover:underline">Se reconnecter</a>
+    <a href="/logout" class="text-sm text-amber-500 hover:underline">Se reconnecter</a>
   </div>
 </div>
 <?php else: ?>
@@ -169,7 +169,7 @@ $stats    = $me['stats'] ?? [];
             fn($b) => $b && ($b['id'] ?? null) !== ($user['id'] ?? null)
         );
       ?>
-      <a href="/trip.php?id=<?= (int)$tripId ?>" class="flex items-center gap-4 bg-gray-900 rounded-2xl border border-gray-800 px-4 py-3 hover:border-amber-200 hover:shadow-sm transition-all group">
+      <a href="/trip/<?= (int)$tripId ?>" class="flex items-center gap-4 bg-gray-900 rounded-2xl border border-gray-800 px-4 py-3 hover:border-amber-200 hover:shadow-sm transition-all group">
         <!-- Cover -->
         <?php if ($cover): ?>
         <img src="<?= esc($cover) ?>" alt="" class="w-16 h-16 rounded-xl object-cover flex-shrink-0 opacity-90 group-hover:opacity-100 transition-opacity">

@@ -8,7 +8,7 @@ use GPolar\PolarstepsClient;
 
 // Already logged in?
 if (getToken()) {
-    header('Location: /index.php');
+    header('Location: /');
     exit;
 }
 
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $client = new PolarstepsClient($token);
                 $client->getMe();
                 setToken($token);
-                header('Location: /index.php');
+                header('Location: /');
                 exit;
             } catch (\Throwable $e) {
                 $error = $e->getMessage();
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $token = PolarstepsClient::loginWithCredentials($username, $password);
                 setToken($token);
-                header('Location: /index.php');
+                header('Location: /');
                 exit;
             } catch (\Throwable $e) {
                 $error = $e->getMessage();
