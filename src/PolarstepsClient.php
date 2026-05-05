@@ -119,7 +119,7 @@ class PolarstepsClient
      */
     public function getStepComments(int $stepId): array
     {
-        return $this->request("/social/steps/{$stepId}/comments");
+        return $this->request("/api/social/steps/{$stepId}/comments?s=", self::WEB_URL);
     }
 
     /**

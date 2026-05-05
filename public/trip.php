@@ -697,7 +697,7 @@ async function loadComments(btn, stepId) {
 
   btn.classList.remove('opacity-50', 'pointer-events-none');
 
-  const comments = data.comments ?? (Array.isArray(data) ? data : []);
+  const comments = data.comments ?? data.items ?? data.results ?? data.all_comments ?? (Array.isArray(data) ? data : []);
 
   const reactionEmoji = { love: '❤️', like: '👍', haha: '😂', wow: '😮', sad: '😢', angry: '😠' };
 

@@ -18,9 +18,9 @@ if (!$token || !$stepId || !ctype_digit((string) $stepId)) {
 }
 
 try {
-    $client   = new PolarstepsClient($token);
-    $comments = $client->getStepComments((int) $stepId);
-    echo json_encode($comments);
+    $client = new PolarstepsClient($token);
+    $data   = $client->getStepComments((int) $stepId);
+    echo json_encode($data);
 } catch (\Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);
