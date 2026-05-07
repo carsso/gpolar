@@ -672,12 +672,18 @@ function flyToStep(stepIdx) {
   map.flyTo([s.lat, s.lon], 12, { duration: 0.8 });
   setTimeout(() => markers[MAP_STEPS.indexOf(s)].openPopup(), 900);
 }
+let programmaticScroll = false;
+let programmaticScrollTimer = null;
 function scrollToStep(stepIdx) {
+  programmaticScroll = true;
+  clearTimeout(programmaticScrollTimer);
+  programmaticScrollTimer = setTimeout(() => { programmaticScroll = false; }, 1200);
   document.getElementById(`step-${stepIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// Auto-highlight marker on scroll
+// Auto-highlight marker on scroll (disabled during programmatic scrolls)
 const observer = new IntersectionObserver(entries => {
+  if (programmaticScroll) return;
   entries.forEach(e => {
     if (e.isIntersecting) {
       const idx = parseInt(e.target.dataset.step, 10);
