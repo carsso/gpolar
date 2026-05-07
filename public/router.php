@@ -15,11 +15,19 @@ if (preg_match('#^/trip/(\d+)$#', $uri, $m)) {
     exit;
 }
 
+// /share/{token}
+if (preg_match('#^/share/([a-f0-9]+)$#', $uri, $m)) {
+    $_GET['token'] = $m[1];
+    require __DIR__ . '/share.php';
+    exit;
+}
+
 $map = [
     '/'             => 'index.php',
     '/login'        => 'login.php',
     '/logout'       => 'logout.php',
     '/api/comments' => 'api/comments.php',
+    '/api/share'    => 'api/share.php',
 ];
 
 if (isset($map[$uri])) {

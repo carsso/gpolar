@@ -6,8 +6,9 @@ require_once __DIR__ . '/../src/helpers.php';
 
 use GPolar\PolarstepsClient;
 
-$token  = requireAuth();
-$tripId = $_GET['id'] ?? null;
+if (!isset($isPublicShare)) $isPublicShare = false;
+if (!isset($token))        $token  = requireAuth();
+if (!isset($tripId))       $tripId = $_GET['id'] ?? null;
 
 if (!$tripId || !ctype_digit((string) $tripId)) {
     header('Location: /');
@@ -81,7 +82,13 @@ foreach ($trip['trip_buddies'] ?? [] as $b) {
 
 // Logged-in user for nav
 $me = [];
-try { $me = $client->getMe(); } catch (\Throwable) {}
+$existingShareToken = null;
+if (!$isPublicShare) {
+    try {
+        $me = $client->getMe();
+        $existingShareToken = \GPolar\ShareStore::findToken((string)$tripId, (string)$me['id']);
+    } catch (\Throwable) {}
+}
 
 $latestStepTs = array_reduce($steps, fn($m, $s) => max($m, parseTs($s['start_time'])), 0);
 $daysOnRoad   = ($latestStepTs && $tripStart) ? dayNum($latestStepTs, $tripStart) : 0;
@@ -141,8 +148,13 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 <div class="max-w-lg mx-auto mt-16 text-center px-4">
   <div class="bg-gray-900 rounded-2xl border border-red-900 shadow-sm p-8">
     <div class="text-4xl mb-4">🚴</div>
+    <?php if ($isPublicShare && (str_contains($error, '401') || str_contains($error, '403'))): ?>
+    <h2 class="font-semibold text-gray-100 mb-2">Voyage temporairement inaccessible</h2>
+    <p class="text-sm text-gray-500">Le propriétaire de ce voyage doit se reconnecter pour réactiver le lien de partage.</p>
+    <?php else: ?>
     <h2 class="font-semibold text-gray-100 mb-2">Impossible de charger le voyage</h2>
     <p class="text-sm text-gray-500"><?= esc($error) ?></p>
+    <?php endif; ?>
   </div>
 </div>
 <?php else: ?>
@@ -177,11 +189,20 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
     <p class="text-white/65 text-sm mt-1.5 max-w-2xl leading-relaxed"><?= esc($summary) ?></p>
     <?php endif; ?>
   </div>
-  <?php if ($ongoing): ?>
-  <div class="absolute top-4 right-4 flex items-center gap-1.5 bg-red-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-full">
-    <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> En cours
+  <div class="absolute top-4 right-4 flex items-center gap-2">
+    <?php if ($ongoing): ?>
+    <div class="flex items-center gap-1.5 bg-red-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-full">
+      <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> En cours
+    </div>
+    <?php endif; ?>
+    <?php if (!$isPublicShare): ?>
+    <button onclick="openShareModal(<?= (int)$tripId ?>)"
+      class="flex items-center gap-1.5 bg-black/40 hover:bg-black/60 backdrop-blur text-white text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors border border-white/20">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+      Partager
+    </button>
+    <?php endif; ?>
   </div>
-  <?php endif; ?>
 </div>
 
 <!-- ── Stats bar ── -->
@@ -213,7 +234,8 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
     <!-- Steps timeline -->
     <div class="lg:w-3/5 space-y-0" id="steps-container">
       <?php
-        $toggleUrl = '/trip/' . (int)$tripId . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
+        $baseUrl   = $isPublicShare ? '/share/' . ($_GET['token'] ?? '') : '/trip/' . (int)$tripId;
+        $toggleUrl = $baseUrl . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
       ?>
       <?php
       $prevDay = null;
@@ -417,6 +439,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 <?php endif; ?>
 
 <script>
+const SHARE_TOKEN = <?= $isPublicShare ? json_encode($_GET['token'] ?? '') : "''" ?>;
 const STEP_PHOTOS = <?= json_encode($stepPhotosJs, $jsonFlags) ?>;
 const MAP_STEPS   = <?= json_encode($mapSteps,    $jsonFlags) ?>;
 const MAP_ROUTE   = <?= json_encode($mapRoute,    $jsonFlags) ?>;
@@ -728,7 +751,7 @@ async function loadComments(btn, stepId) {
 
   btn.classList.add('opacity-50', 'pointer-events-none');
 
-  const res  = await fetch(`/api/comments?step_id=${stepId}`);
+  const res  = await fetch(`/api/comments?step_id=${stepId}${SHARE_TOKEN ? '&share='+SHARE_TOKEN : ''}`);
   const data = await res.json();
 
   btn.classList.remove('opacity-50', 'pointer-events-none');
@@ -835,6 +858,116 @@ dbg('mapSteps', count($mapSteps));
     <?php endforeach; ?>
   </div>
 </div>
+
+<?php if (!$isPublicShare): ?>
+<!-- ── Share modal ── -->
+<div id="share-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="bg-gray-900 rounded-2xl border border-gray-700 shadow-2xl p-6 w-full max-w-md mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold text-gray-100">Lien de partage</h3>
+      <button onclick="closeShareModal()" class="text-gray-500 hover:text-gray-200 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="share-confirm" class="space-y-4">
+      <p class="text-sm text-gray-300">Pour générer un lien public, GPolar doit stocker ton token d'accès Polarsteps sur le serveur afin de récupérer les données du voyage pour les visiteurs.</p>
+      <ul class="text-xs text-gray-500 space-y-1 list-disc list-inside">
+        <li>Le lien donne accès en <strong class="text-gray-400">lecture seule</strong> — aucune action possible pour les visiteurs</li>
+        <li>Le token est stocké côté serveur, jamais transmis aux visiteurs</li>
+        <li>Si le token expire, le lien ne fonctionnera plus jusqu'à ta prochaine reconnexion sur GPolar</li>
+        <li>Il est mis à jour automatiquement à chaque reconnexion</li>
+        <li>Tu peux supprimer le lien à tout moment</li>
+      </ul>
+      <div class="flex gap-2 pt-1">
+        <button onclick="closeShareModal()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">Annuler</button>
+        <button onclick="confirmShare()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-gray-900 text-sm font-semibold py-2 rounded-lg transition-colors">Accepter et générer</button>
+      </div>
+    </div>
+    <div id="share-loading" class="hidden text-sm text-gray-400 text-center py-4">Génération du lien…</div>
+    <div id="share-content" class="hidden space-y-3">
+      <p class="text-sm text-gray-300">GPolar stocke ton token d'accès Polarsteps sur le serveur afin de récupérer les données du voyage pour les visiteurs.</p>
+      <ul class="text-xs text-gray-500 space-y-1 list-disc list-inside">
+        <li>Le lien donne accès en <strong class="text-gray-400">lecture seule</strong> — aucune action possible pour les visiteurs</li>
+        <li>Le token est stocké côté serveur, jamais transmis aux visiteurs</li>
+        <li>Si le token expire, le lien ne fonctionnera plus jusqu'à ta prochaine reconnexion sur GPolar</li>
+        <li>Il est mis à jour automatiquement à chaque reconnexion</li>
+        <li>Tu peux supprimer le lien à tout moment</li>
+      </ul>
+      <div class="flex gap-2">
+        <input id="share-url" type="text" readonly
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none cursor-pointer"
+          onclick="this.select()">
+        <button onclick="copyShareUrl()"
+          class="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+          Copier
+        </button>
+      </div>
+      <button onclick="deleteShare()" class="text-xs text-red-500 hover:text-red-400 transition-colors">Supprimer le lien</button>
+    </div>
+    <div id="share-error" class="hidden text-sm text-red-400 text-center py-2"></div>
+  </div>
+</div>
+<script>
+let _shareToken = <?= $existingShareToken ? json_encode($existingShareToken) : 'null' ?>;
+let _shareTripId = null;
+function openShareModal(tripId) {
+  _shareTripId = tripId;
+  document.getElementById('share-modal').classList.remove('hidden');
+  document.getElementById('share-error').classList.add('hidden');
+  if (_shareToken) {
+    // Link already exists — skip confirmation, show directly
+    const host = location.protocol + '//' + location.host;
+    document.getElementById('share-url').value = host + '/share/' + _shareToken;
+    document.getElementById('share-confirm').classList.add('hidden');
+    document.getElementById('share-loading').classList.add('hidden');
+    document.getElementById('share-content').classList.remove('hidden');
+  } else {
+    document.getElementById('share-confirm').classList.remove('hidden');
+    document.getElementById('share-loading').classList.add('hidden');
+    document.getElementById('share-content').classList.add('hidden');
+  }
+}
+async function confirmShare() {
+  document.getElementById('share-confirm').classList.add('hidden');
+  document.getElementById('share-loading').classList.remove('hidden');
+  try {
+    const r = await fetch('/api/share', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({trip_id: String(_shareTripId)}) });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    _shareToken = d.token;
+    document.getElementById('share-url').value = d.url;
+    document.getElementById('share-loading').classList.add('hidden');
+    document.getElementById('share-content').classList.remove('hidden');
+  } catch(e) {
+    document.getElementById('share-loading').classList.add('hidden');
+    document.getElementById('share-error').textContent = e.message;
+    document.getElementById('share-error').classList.remove('hidden');
+  }
+}
+function closeShareModal() {
+  document.getElementById('share-modal').classList.add('hidden');
+}
+function copyShareUrl() {
+  const input = document.getElementById('share-url');
+  input.select();
+  navigator.clipboard?.writeText(input.value) ?? document.execCommand('copy');
+  const btn = event.currentTarget;
+  btn.textContent = 'Copié !';
+  setTimeout(() => btn.textContent = 'Copier', 2000);
+}
+async function deleteShare() {
+  if (!_shareToken || !confirm('Supprimer ce lien de partage ?')) return;
+  try {
+    await fetch('/api/share', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token: _shareToken}) });
+    _shareToken = null;
+    closeShareModal();
+  } catch(e) {}
+}
+document.getElementById('share-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeShareModal();
+});
+</script>
+<?php endif; ?>
 
 </body>
 </html>

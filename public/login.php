@@ -5,6 +5,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../src/helpers.php';
 
 use GPolar\PolarstepsClient;
+use GPolar\ShareStore;
 
 // Already logged in?
 if (getToken()) {
@@ -24,8 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             try {
                 $client = new PolarstepsClient($token);
-                $client->getMe();
+                $me     = $client->getMe();
                 setToken($token);
+                ShareStore::updateToken((string) $me['id'], $token);
                 header('Location: /');
                 exit;
             } catch (\Throwable $e) {
@@ -40,7 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             try {
                 $token = PolarstepsClient::loginWithCredentials($username, $password);
+                $me    = (new PolarstepsClient($token))->getMe();
                 setToken($token);
+                ShareStore::updateToken((string) $me['id'], $token);
                 header('Location: /');
                 exit;
             } catch (\Throwable $e) {

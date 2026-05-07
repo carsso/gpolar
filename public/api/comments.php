@@ -5,15 +5,28 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/../../src/helpers.php';
 
 use GPolar\PolarstepsClient;
+use GPolar\ShareStore;
 
 header('Content-Type: application/json');
 
-$token  = getToken();
 $stepId = $_GET['step_id'] ?? null;
-
-if (!$token || !$stepId || !ctype_digit((string) $stepId)) {
+if (!$stepId || !ctype_digit((string) $stepId)) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid request']);
+    exit;
+}
+
+// Auth: session token or share token
+$token = getToken();
+if (!$token) {
+    $shareToken = $_GET['share'] ?? '';
+    $share = $shareToken ? ShareStore::get($shareToken) : null;
+    $token = $share['ps_token'] ?? null;
+}
+
+if (!$token) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Non authentifié']);
     exit;
 }
 
