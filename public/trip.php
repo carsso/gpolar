@@ -98,9 +98,10 @@ for ($j = count($steps) - 1; $j >= 0; $j--) {
     if ($lat !== null) { $nextLat = $lat; $nextLon = $lon; }
 }
 
-// Photos per step (for JS lightbox)
+// Photos per step (for JS lightbox) — indexed by chronological num-1 (stable regardless of sort)
 $stepPhotosJs = [];
-foreach ($steps as $i => $step) {
+foreach ($steps as $step) {
+    $chrono  = $step['_num'] - 1;
     $thumbs  = [];
     $fullRes = [];
     foreach ($step['media'] ?? [] as $m) {
@@ -108,7 +109,7 @@ foreach ($steps as $i => $step) {
         $thumbs[]  = $m['large_thumbnail_path'];
         $fullRes[] = $m['path'] ?: ($m['cdn_path'] ?: $m['large_thumbnail_path']);
     }
-    $stepPhotosJs[$i] = ['thumbs' => $thumbs, 'full' => $fullRes];
+    $stepPhotosJs[$chrono] = ['thumbs' => $thumbs, 'full' => $fullRes];
 }
 
 // Map data — always chronological so bikes always go start→end
@@ -123,7 +124,8 @@ foreach ($stepsChronological as $i => $step) {
     $desc      = trim($step['description'] ?? '');
     $hasPhotos = !empty(array_filter($step['media'] ?? [], fn($m) => !($m['is_deleted'] ?? false) && !empty($m['large_thumbnail_path'])));
     if ($desc || $hasPhotos) {
-        $mapSteps[] = ['i' => $i, 'name' => $step['display_name'] ?? $step['name'] ?? '', 'lat' => $lat, 'lon' => $lon];
+        $thumb = $stepPhotosJs[$i]['thumbs'][0] ?? null;
+        $mapSteps[] = ['i' => $i, 'name' => $step['display_name'] ?? $step['name'] ?? '', 'lat' => $lat, 'lon' => $lon, 'thumb' => $thumb];
     }
 }
 
@@ -619,19 +621,47 @@ function startBikeAnimation(latlngs) {
   startBikeAnimation(routed.length ? routed : MAP_ROUTE);
 })();
 
+const clusterGroup = L.markerClusterGroup({
+  maxClusterRadius: 40,
+  iconCreateFunction: cluster => {
+    const children = cluster.getAllChildMarkers();
+    const last     = children.reduce((a, b) => (a.options.stepIdx ?? 0) > (b.options.stepIdx ?? 0) ? a : b);
+    const color    = last.options.stepColor ?? '#f59e0b';
+    const thumb    = last.options.stepThumb ?? null;
+    const n        = children.length;
+    const inner    = thumb
+      ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" loading="lazy" onerror="this.parentElement.style.background='${color}';this.remove()">
+         <span style="position:absolute;bottom:-1px;right:-1px;background:${color};color:#1f2937;font-size:9px;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;border:1.5px solid white">${n}</span>`
+      : `<span style="font-size:11px;font-weight:700;color:#1f2937">${n}</span>`;
+    return L.divIcon({
+      className: '',
+      iconSize: [36, 36], iconAnchor: [18, 18],
+      html: `<div style="position:relative;width:36px;height:36px;border-radius:50%;background:${thumb ? '#1f2937' : color};border:2.5px solid ${color};box-shadow:0 1px 6px rgba(0,0,0,.5);overflow:visible;display:flex;align-items:center;justify-content:center">${inner}</div>`
+    });
+  }
+}).addTo(map);
+
 const markers = MAP_STEPS.map((step, idx) => {
-  const isLast = idx === MAP_STEPS.length - 1;
-  const size   = isLast ? 14 : 11;
-  const color  = isLast ? '#ef4444' : '#f59e0b';
-  const icon   = L.divIcon({
-    className: '',
-    iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>`,
-  });
-  return L.marker([step.lat, step.lon], { icon })
-    .addTo(map)
+  const isLast  = idx === MAP_STEPS.length - 1;
+  const color   = isLast ? '#ef4444' : '#f59e0b';
+  let html;
+  if (step.thumb) {
+    const s = isLast ? 36 : 30;
+    html = `<div style="width:${s}px;height:${s}px;border-radius:50%;border:2.5px solid ${color};box-shadow:0 1px 6px rgba(0,0,0,.5);overflow:hidden;background:#1f2937">
+              <img src="${step.thumb}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" loading="lazy"
+                   onerror="this.parentElement.style.background='${color}';this.remove()">
+            </div>`;
+  } else {
+    const s = isLast ? 14 : 11;
+    html = `<div style="width:${s}px;height:${s}px;background:${color};border-radius:50%;border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>`;
+  }
+  const size = step.thumb ? (isLast ? 36 : 30) : (isLast ? 14 : 11);
+  const icon = L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size/2, size/2], html });
+  const m = L.marker([step.lat, step.lon], { icon, stepColor: color, stepThumb: step.thumb ?? null, stepIdx: idx })
     .bindPopup(`<strong style="font-size:13px">${step.name}</strong>`, { offset: [0, -4] })
     .on('click', () => scrollToStep(step.i));
+  clusterGroup.addLayer(m);
+  return m;
 });
 
 map.fitBounds(MAP_ROUTE, { padding: [30, 30] });

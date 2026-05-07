@@ -38,9 +38,10 @@ function esc(string $s): string
 function flag(string $code): string
 {
     if (strlen($code) !== 2) return '';
-    $base  = 0x1F1E6 - ord('A');
-    $chars = str_split(strtoupper($code));
-    return mb_chr($base + ord($chars[0]), 'UTF-8') . mb_chr($base + ord($chars[1]), 'UTF-8');
+    $code = strtoupper($code);
+    if (!ctype_alpha($code)) return '';
+    $base = 0x1F1E6 - ord('A');
+    return mb_chr($base + ord($code[0]), 'UTF-8') . mb_chr($base + ord($code[1]), 'UTF-8');
 }
 
 function fmtDate(int $ts): string
@@ -159,7 +160,10 @@ function htmlHead(string $title, bool $withLeaflet = false): string
 {
     $leaflet = $withLeaflet ? '
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>' : '';
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>' : '';
 
     return <<<HTML
 <!DOCTYPE html>
