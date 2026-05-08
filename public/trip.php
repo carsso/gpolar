@@ -131,7 +131,7 @@ foreach ($stepsChronological as $i => $step) {
     $desc      = trim($step['description'] ?? '');
     $hasPhotos = !empty(array_filter($step['media'] ?? [], fn($m) => !($m['is_deleted'] ?? false) && !empty($m['large_thumbnail_path'])));
     if ($desc || $hasPhotos) {
-        $thumb = $stepPhotosJs[$i]['thumbs'][0] ?? null;
+        $thumb = $stepPhotosJs[$step['_num'] - 1]['thumbs'][0] ?? null;
         $mapSteps[] = ['i' => $i, 'name' => $step['display_name'] ?? $step['name'] ?? '', 'lat' => $lat, 'lon' => $lon, 'thumb' => $thumb];
     }
 }
@@ -242,7 +242,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
       foreach ($steps as $i => $step):
         $dayN    = $tripStart ? dayNum(parseTs($step['start_time']), $tripStart) : ($i + 1);
         $isLast  = $i === array_key_last($steps);
-        $photos  = $stepPhotosJs[$i]['thumbs'] ?? [];
+        $photos  = $stepPhotosJs[$step['_num'] - 1]['thumbs'] ?? [];
         $loc     = $step['location'] ?? [];
         $cc      = $loc['country_code'] ?? '';
         $desc    = trim($step['description'] ?? '');
@@ -320,7 +320,7 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
             <img src="<?= esc($thumb) ?>"
                  class="h-32 sm:h-40 w-auto flex-shrink-0 rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
                  loading="lazy"
-                 onclick="openLightbox(<?= $i ?>, <?= $j ?>)"
+                 onclick="openLightbox(<?= $step['_num'] - 1 ?>, <?= $j ?>)"
                  alt="">
             <?php endforeach; ?>
           </div>
