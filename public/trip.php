@@ -852,10 +852,12 @@ document.querySelectorAll('[data-photo-strip]').forEach(strip => {
   const update = () => {
     const sl = strip.scrollLeft;
     const maxScroll = strip.scrollWidth - strip.clientWidth;
-    if (fadeL) fadeL.style.opacity = sl > 4 ? '1' : '0';
-    if (fadeR) fadeR.style.opacity = sl < maxScroll - 4 ? '1' : '0';
+    const overflows = maxScroll > 1;
+    if (fadeL) fadeL.style.opacity = overflows && sl > 4 ? '1' : '0';
+    if (fadeR) fadeR.style.opacity = overflows && sl < maxScroll - 4 ? '1' : '0';
     let idx;
-    if (sl <= 2)                  idx = 0;
+    if (!overflows)               idx = count - 1;
+    else if (sl <= 2)             idx = 0;
     else if (sl >= maxScroll - 2) idx = count - 1;
     else {
       const viewCenter = sl + strip.clientWidth / 2;
@@ -871,6 +873,15 @@ document.querySelectorAll('[data-photo-strip]').forEach(strip => {
   update();
   strip.addEventListener('scroll', update, { passive: true });
   window.addEventListener('resize', update);
+  // Lazy-loaded images start with width 0; recompute when they get their real size
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(update);
+    Array.from(strip.children).forEach(c => ro.observe(c));
+  } else {
+    strip.querySelectorAll('img').forEach(img => {
+      if (!img.complete) img.addEventListener('load', update, { once: true });
+    });
+  }
 });
 
 // Touch swipe navigation
