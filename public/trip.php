@@ -314,15 +314,22 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
           </div>
 
           <!-- Photos -->
-          <?php if (!empty($photos)): ?>
-          <div class="flex gap-2 overflow-x-auto photo-scroll px-4 pb-3">
-            <?php foreach ($photos as $j => $thumb): ?>
-            <img src="<?= esc($thumb) ?>"
-                 class="h-32 sm:h-40 w-auto flex-shrink-0 rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                 loading="lazy"
-                 onclick="openLightbox(<?= $step['_num'] - 1 ?>, <?= $j ?>)"
-                 alt="">
-            <?php endforeach; ?>
+          <?php if (!empty($photos)): $photoCount = count($photos); ?>
+          <div class="photo-strip-wrap relative">
+            <div class="flex gap-2 overflow-x-auto photo-scroll px-4 pb-3" data-photo-strip data-count="<?= $photoCount ?>">
+              <?php foreach ($photos as $j => $thumb): ?>
+              <img src="<?= esc($thumb) ?>"
+                   class="h-32 sm:h-40 w-auto flex-shrink-0 rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                   loading="lazy"
+                   onclick="openLightbox(<?= $step['_num'] - 1 ?>, <?= $j ?>)"
+                   alt="">
+              <?php endforeach; ?>
+            </div>
+            <?php if ($photoCount > 1): ?>
+            <div class="photo-fade photo-fade-l pointer-events-none absolute top-0 bottom-3 left-0 w-6 bg-gradient-to-r from-gray-900 to-transparent opacity-0 transition-opacity"></div>
+            <div class="photo-fade photo-fade-r pointer-events-none absolute top-0 bottom-3 right-0 w-6 bg-gradient-to-l from-gray-900 to-transparent transition-opacity"></div>
+            <div class="photo-counter pointer-events-none absolute top-2 right-3 bg-black/55 text-white/90 text-[10px] font-medium px-2 py-0.5 rounded-full backdrop-blur-sm tabular-nums">1 / <?= $photoCount ?></div>
+            <?php endif; ?>
           </div>
           <?php endif; ?>
 
@@ -832,6 +839,38 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape')     closeLightbox();
   if (e.key === 'ArrowLeft')  lightboxNav(-1);
   if (e.key === 'ArrowRight') lightboxNav(1);
+});
+
+// Photo strip: live counter + edge fades
+document.querySelectorAll('[data-photo-strip]').forEach(strip => {
+  const count = parseInt(strip.dataset.count, 10);
+  if (count <= 1) return;
+  const wrap   = strip.parentElement;
+  const counter = wrap.querySelector('.photo-counter');
+  const fadeL   = wrap.querySelector('.photo-fade-l');
+  const fadeR   = wrap.querySelector('.photo-fade-r');
+  const update = () => {
+    const sl = strip.scrollLeft;
+    const maxScroll = strip.scrollWidth - strip.clientWidth;
+    if (fadeL) fadeL.style.opacity = sl > 4 ? '1' : '0';
+    if (fadeR) fadeR.style.opacity = sl < maxScroll - 4 ? '1' : '0';
+    let idx;
+    if (sl <= 2)                  idx = 0;
+    else if (sl >= maxScroll - 2) idx = count - 1;
+    else {
+      const viewCenter = sl + strip.clientWidth / 2;
+      let best = Infinity; idx = 0;
+      for (let i = 0; i < strip.children.length; i++) {
+        const c = strip.children[i];
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - viewCenter);
+        if (d < best) { best = d; idx = i; }
+      }
+    }
+    counter.textContent = `${idx + 1} / ${count}`;
+  };
+  update();
+  strip.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
 });
 
 // Touch swipe navigation
