@@ -833,6 +833,31 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft')  lightboxNav(-1);
   if (e.key === 'ArrowRight') lightboxNav(1);
 });
+
+// Touch swipe navigation
+(() => {
+  const lb = document.getElementById('lightbox');
+  if (!lb) return;
+  let startX = 0, startY = 0, startT = 0, tracking = false;
+  lb.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    tracking = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startT = Date.now();
+  }, { passive: true });
+  lb.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    const dt = Date.now() - startT;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 600) {
+      lightboxNav(dx < 0 ? 1 : -1);
+    }
+  }, { passive: true });
+})();
 </script>
 
 <!-- ── Debug panel ── -->
