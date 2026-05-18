@@ -190,6 +190,11 @@ function htmlHead(string $title, bool $withLeaflet = false): string
     .leaflet-control-layers-separator{border-color:#374151}
     .leaflet-control-attribution{background:rgba(17,24,39,.75)!important;color:#6b7280;font-size:10px}
     .leaflet-control-attribution a{color:#9ca3af}
+    .live-pulse{position:relative;width:22px;height:22px}
+    .live-pulse span{position:absolute;inset:0;border-radius:50%;background:#ef4444;opacity:.45;animation:live-pulse 1.8s ease-out infinite}
+    .live-pulse span:nth-child(2){animation-delay:.9s}
+    .live-pulse b{position:absolute;top:50%;left:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+    @keyframes live-pulse{0%{transform:scale(.5);opacity:.55}100%{transform:scale(2.4);opacity:0}}
   </style>
   <script>
   (function(){

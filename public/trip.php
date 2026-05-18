@@ -69,7 +69,8 @@ $likeCount  = $trip['like_count'] ?? 0;
 
 // Countries: extract unique country codes from steps (visited_countries no longer in API)
 $countries = array_values(array_unique(array_filter(
-    array_map(fn($s) => $s['location']['country_code'] ?? '', $steps)
+    array_map(fn($s) => strtoupper((string)($s['location']['country_code'] ?? '')), $steps),
+    fn($cc) => strlen($cc) === 2 && ctype_alpha($cc)
 )));
 
 // Trip participants: owner + buddies
@@ -136,8 +137,61 @@ foreach ($stepsChronological as $i => $step) {
     }
 }
 
-// Initial route: straight lines between steps, JS will upgrade to road routing via OSRM
-$mapRoute = $stepCoords;
+// Build chronological trail: merge step locations + zelda GPS pings.
+// Steps act as fallback waypoints when GPS tracking was off between two steps,
+// guaranteeing every step is connected even if a zelda gap exists.
+$zelda = $trip['zelda_steps'] ?? [];
+if (!is_array($zelda)) $zelda = [];
+
+$combined = [];
+foreach ($stepsChronological as $step) {
+    $lat = $step['location']['lat'] ?? null;
+    $lon = $step['location']['lon'] ?? null;
+    if (!$lat || !$lon) continue;
+    $combined[] = ['t' => parseTs($step['start_time']), 'pt' => [(float)$lat, (float)$lon]];
+}
+foreach ($zelda as $z) {
+    $lat = $z['location']['lat'] ?? null;
+    $lon = $z['location']['lon'] ?? null;
+    if (!$lat || !$lon) continue;
+    $combined[] = ['t' => parseTs($z['time'] ?? 0), 'pt' => [(float)$lat, (float)$lon]];
+}
+usort($combined, fn($a, $b) => $a['t'] <=> $b['t']);
+
+$gpsHistory = [];
+$gpsLive    = [];
+foreach ($combined as $c) {
+    if ($c['t'] <= $latestStepTs) $gpsHistory[] = $c['pt'];
+    else                          $gpsLive[]    = $c['pt'];
+}
+
+// $hasGpsTrail = true if zelda contributed real GPS pings (not just step locations);
+// determines whether to skip the OSRM road-routing upgrade in JS.
+$hasGpsTrail = false;
+foreach ($zelda as $z) {
+    if (!empty($z['location']['lat']) && !empty($z['location']['lon'])) {
+        $hasGpsTrail = true;
+        break;
+    }
+}
+$mapRoute = !empty($gpsHistory) ? $gpsHistory : $stepCoords;
+
+// Live position (only when trip is ongoing and we have GPS more recent than last step)
+$livePosition = null;
+$liveTrail    = [];
+if ($ongoing && !empty($gpsLive)) {
+    $lastLive = end($zelda);
+    $livePosition = [
+        'lat'      => (float)$lastLive['location']['lat'],
+        'lon'      => (float)$lastLive['location']['lon'],
+        'time'     => parseTs($lastLive['time'] ?? 0),
+        'locality' => $lastLive['location']['locality'] ?? '',
+        'cc'       => $lastLive['location']['country_code'] ?? '',
+    ];
+    $anchor = end($gpsHistory) ?: end($stepCoords);
+    if ($anchor) $liveTrail[] = $anchor;
+    foreach ($gpsLive as $p) $liveTrail[] = $p;
+}
 
 $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 ?>
@@ -236,7 +290,34 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
       <?php
         $baseUrl   = $isPublicShare ? '/share/' . ($_GET['token'] ?? '') : '/trip/' . (int)$tripId;
         $toggleUrl = $baseUrl . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
+        $liveCard  = '';
+        if ($livePosition) {
+            $locTxt = esc($livePosition['locality'] ?: '');
+            $fHtml  = $livePosition['cc'] ? flag($livePosition['cc']) : '';
+            $tsAttr = (int)$livePosition['time'];
+            $liveCard = <<<HTML
+      <div class="step-card group relative flex gap-3 pb-6 px-1">
+        <div class="flex-shrink-0 flex flex-col items-center" style="width:38px">
+          <button onclick="flyToLive()"
+            class="relative w-9 h-9 rounded-full bg-red-500 flex items-center justify-center shadow ring-4 ring-gray-900 z-10 transition-transform group-hover:scale-110"
+            title="Voir sur la carte">
+            <span class="absolute inset-0 rounded-full bg-red-500 opacity-60 animate-ping"></span>
+            <span class="relative w-3 h-3 rounded-full bg-white"></span>
+          </button>
+        </div>
+        <div class="flex-1 bg-gray-900 rounded-2xl border border-red-900/40 shadow-sm p-4">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[10px] font-bold text-red-500 uppercase tracking-widest">Position actuelle</span>
+            {$fHtml}
+          </div>
+          <div class="text-sm font-semibold text-gray-100 mt-1">{$locTxt}</div>
+          <div class="text-xs text-gray-500 mt-0.5" data-live-time="{$tsAttr}"></div>
+        </div>
+      </div>
+HTML;
+        }
       ?>
+      <?php if ($liveCard && $sortOrder === 'desc') echo $liveCard; ?>
       <?php
       $prevDay = null;
       foreach ($steps as $i => $step):
@@ -399,6 +480,8 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 
       <?php endforeach; ?>
 
+      <?php if ($liveCard && $sortOrder !== 'desc') echo $liveCard; ?>
+
       <?php if ($likeCount > 0): ?>
       <div class="text-center pt-2 pb-4 text-xs text-gray-400">
         ❤️ <?= $likeCount ?> personnes aiment ce voyage
@@ -450,6 +533,9 @@ const SHARE_TOKEN = <?= $isPublicShare ? json_encode($_GET['token'] ?? '') : "''
 const STEP_PHOTOS = <?= json_encode($stepPhotosJs, $jsonFlags) ?>;
 const MAP_STEPS   = <?= json_encode($mapSteps,    $jsonFlags) ?>;
 const MAP_ROUTE   = <?= json_encode($mapRoute,    $jsonFlags) ?>;
+const LIVE_POS    = <?= json_encode($livePosition, $jsonFlags) ?>;
+const LIVE_TRAIL  = <?= json_encode($liveTrail,    $jsonFlags) ?>;
+const HAS_GPS_TRAIL = <?= $hasGpsTrail ? 'true' : 'false' ?>;
 
 <?php if (!$error && !empty($mapRoute)): ?>
 // ── Map ───────────────────────────────────────────────────────────────────────
@@ -465,7 +551,39 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.p
   pane: 'shadowPane',
 }).addTo(map);
 
-const routeLine = L.polyline(MAP_ROUTE, { color: '#f59e0b', weight: 3, opacity: 0.5, dashArray: '6 6' }).addTo(map);
+const routeLine = L.polyline(MAP_ROUTE, HAS_GPS_TRAIL
+  ? { color: '#f59e0b', weight: 3, opacity: 0.8 }
+  : { color: '#f59e0b', weight: 3, opacity: 0.5, dashArray: '6 6' }
+).addTo(map);
+
+// Live position — pings GPS continus depuis la dernière étape postée
+const liveLine = (LIVE_TRAIL && LIVE_TRAIL.length >= 2)
+  ? L.polyline(LIVE_TRAIL, { color: '#ef4444', weight: 2.5, opacity: 0.85 }).addTo(map)
+  : null;
+function relTime(ts) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (s < 3600)     return `il y a ${Math.max(1, Math.floor(s / 60))} min`;
+  if (s < 86400)    return `il y a ${Math.floor(s / 3600)} h`;
+  if (s < 86400*7)  return `il y a ${Math.floor(s / 86400)} j`;
+  return new Date(ts * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+if (LIVE_POS) {
+  document.querySelectorAll('[data-live-time]').forEach(el => {
+    el.textContent = relTime(parseInt(el.dataset.liveTime, 10));
+  });
+  const cc = (LIVE_POS.cc || '').toUpperCase();
+  const flag = cc.length === 2
+    ? String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65) + ' '
+    : '';
+  const where = LIVE_POS.locality ? `${flag}${LIVE_POS.locality}` : flag.trim();
+  L.marker([LIVE_POS.lat, LIVE_POS.lon], {
+    icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+      html: '<div class="live-pulse"><span></span><span></span><b></b></div>' }),
+    zIndexOffset: 1000,
+  })
+  .bindPopup(`<div style="font-size:12px;line-height:1.4"><strong style="color:#ef4444">⬤ Position actuelle</strong>${where ? '<br>'+where : ''}<br><span style="color:#888">${relTime(LIVE_POS.time)}</span></div>`, { offset: [0, -6] })
+  .addTo(map);
+}
 
 // Animate bikes along the route in a loop, 33% apart
 function startBikeAnimation(latlngs) {
@@ -632,23 +750,69 @@ function startBikeAnimation(latlngs) {
   requestAnimationFrame(tick);
 }
 
-// Upgrade to road routing via OSRM then start bike animation
-(async () => {
-  const waypoints = MAP_STEPS.map(s => [s.lat, s.lon]);
-  if (waypoints.length < 2) { startBikeAnimation(MAP_ROUTE); return; }
-  const routed = [];
-  for (let i = 0; i < waypoints.length - 1; i++) {
-    const [la, lo] = waypoints[i];
-    const [lb, lr] = waypoints[i + 1];
-    try {
-      const res  = await fetch(`https://router.project-osrm.org/route/v1/bike/${lo},${la};${lr},${lb}?overview=full&geometries=geojson`);
-      const data = await res.json();
-      const coords = data?.routes?.[0]?.geometry?.coordinates;
-      if (coords) coords.forEach(([lon, lat]) => routed.push([lat, lon]));
-    } catch {}
+// Full continuous trail = history + live extension (deduplicated at the anchor point).
+function joinRoute(main, tail) {
+  return (tail && tail.length > 1) ? main.concat(tail.slice(1)) : main;
+}
+const FULL_ROUTE = joinRoute(MAP_ROUTE, LIVE_TRAIL);
+
+// Set the map view first — bikes use latLngToContainerPoint which needs a center
+map.fitBounds(L.latLngBounds(FULL_ROUTE), { padding: [30, 30] });
+
+// Replace straight-line gaps (segments > GAP_THRESHOLD_KM) with OSRM road routing.
+// Real GPS pings are typically close together; large jumps mean tracking was off → fill with roads.
+const GAP_THRESHOLD_KM = 10;
+function haversineKm(a, b) {
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(s));
+}
+async function osrmRoute(from, to) {
+  try {
+    const r = await fetch(`https://router.project-osrm.org/route/v1/bike/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`);
+    const d = await r.json();
+    const c = d?.routes?.[0]?.geometry?.coordinates;
+    return c ? c.map(([lon, lat]) => [lat, lon]) : null;
+  } catch { return null; }
+}
+async function fillGaps(route) {
+  if (!route || route.length < 2) return route;
+  const jobs = [];
+  for (let i = 1; i < route.length; i++) {
+    if (haversineKm(route[i-1], route[i]) > GAP_THRESHOLD_KM) {
+      jobs.push({ idx: i, from: route[i-1], to: route[i] });
+    }
   }
-  if (routed.length) routeLine.setLatLngs(routed).setStyle({ opacity: 0.8, dashArray: null });
-  startBikeAnimation(routed.length ? routed : MAP_ROUTE);
+  if (!jobs.length) return route;
+  const results = new Array(jobs.length);
+  const BATCH = 4;
+  for (let i = 0; i < jobs.length; i += BATCH) {
+    const slice = jobs.slice(i, i + BATCH);
+    const out   = await Promise.all(slice.map(j => osrmRoute(j.from, j.to)));
+    out.forEach((r, j) => results[i + j] = r);
+  }
+  const gapMap = new Map(jobs.map((j, i) => [j.idx, results[i]]));
+  const out = [route[0]];
+  for (let i = 1; i < route.length; i++) {
+    const gap = gapMap.get(i);
+    if (gap && gap.length) for (let j = 1; j < gap.length; j++) out.push(gap[j]);
+    else out.push(route[i]);
+  }
+  return out;
+}
+
+(async () => {
+  const filledMap = await fillGaps(MAP_ROUTE);
+  if (filledMap !== MAP_ROUTE) {
+    routeLine.setLatLngs(filledMap).setStyle({ opacity: 0.8, dashArray: null });
+  }
+  let filledLive = LIVE_TRAIL;
+  if (liveLine && LIVE_TRAIL && LIVE_TRAIL.length >= 2) {
+    filledLive = await fillGaps(LIVE_TRAIL);
+    if (filledLive !== LIVE_TRAIL) liveLine.setLatLngs(filledLive);
+  }
+  startBikeAnimation(joinRoute(filledMap, filledLive));
 })();
 
 const clusterGroup = L.markerClusterGroup({
@@ -694,13 +858,15 @@ const markers = MAP_STEPS.map((step, idx) => {
   return m;
 });
 
-map.fitBounds(MAP_ROUTE, { padding: [30, 30] });
-
 function flyToStep(stepIdx) {
   const s = MAP_STEPS.find(s => s.i === stepIdx);
   if (!s) return;
   map.flyTo([s.lat, s.lon], 12, { duration: 0.8 });
   setTimeout(() => markers[MAP_STEPS.indexOf(s)].openPopup(), 900);
+}
+function flyToLive() {
+  if (!LIVE_POS) return;
+  map.flyTo([LIVE_POS.lat, LIVE_POS.lon], 12, { duration: 0.8 });
 }
 let programmaticScroll = false;
 let programmaticScrollTimer = null;
