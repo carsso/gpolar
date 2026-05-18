@@ -132,8 +132,22 @@ foreach ($stepsChronological as $i => $step) {
     $desc      = trim($step['description'] ?? '');
     $hasPhotos = !empty(array_filter($step['media'] ?? [], fn($m) => !($m['is_deleted'] ?? false) && !empty($m['large_thumbnail_path'])));
     if ($desc || $hasPhotos) {
-        $thumb = $stepPhotosJs[$step['_num'] - 1]['thumbs'][0] ?? null;
-        $mapSteps[] = ['i' => $i, 'name' => $step['display_name'] ?? $step['name'] ?? '', 'lat' => $lat, 'lon' => $lon, 'thumb' => $thumb];
+        $thumb     = $stepPhotosJs[$step['_num'] - 1]['thumbs'][0] ?? null;
+        $stepTs    = parseTs($step['start_time']);
+        $cc        = strtoupper((string)($step['location']['country_code'] ?? ''));
+        $mapSteps[] = [
+            'i'        => $i,
+            'num'      => $step['_num'],
+            'name'     => $step['display_name'] ?? $step['name'] ?? '',
+            'lat'      => $lat,
+            'lon'      => $lon,
+            'thumb'    => $thumb,
+            'day'      => $tripStart ? dayNum($stepTs, $tripStart) : 0,
+            'date'     => $stepTs ? fmtDate($stepTs) : '',
+            'locality' => $step['location']['locality'] ?? '',
+            'detail'   => $step['location']['full_detail'] ?? '',
+            'cc'       => (strlen($cc) === 2 && ctype_alpha($cc)) ? $cc : '',
+        ];
     }
 }
 
@@ -291,12 +305,29 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
         $baseUrl   = $isPublicShare ? '/share/' . ($_GET['token'] ?? '') : '/trip/' . (int)$tripId;
         $toggleUrl = $baseUrl . '?order=' . ($sortOrder === 'asc' ? 'desc' : 'asc');
         $liveCard  = '';
+        $liveDayN  = ($livePosition && $tripStart) ? dayNum($livePosition['time'], $tripStart) : 0;
+        $liveSep   = '';
+        if ($livePosition && $liveDayN > 0) {
+            $rot     = $sortOrder === 'desc' ? 'rotate-180' : '';
+            $url     = esc($toggleUrl);
+            $dateTxt = fmtDate($livePosition['time']);
+            $liveSep = <<<HTML
+      <div class="day-sep flex items-center gap-3 pt-2 pb-3 px-1">
+        <div class="h-px flex-1 bg-gray-700"></div>
+        <a href="{$url}" class="flex items-center gap-1 text-xs font-semibold text-gray-500 hover:text-amber-500 uppercase tracking-widest whitespace-nowrap transition-colors" title="Inverser l'ordre">
+          Jour {$liveDayN} · {$dateTxt}
+          <svg class="w-3 h-3 opacity-40 {$rot}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </a>
+        <div class="h-px flex-1 bg-gray-700"></div>
+      </div>
+HTML;
+        }
         if ($livePosition) {
             $locTxt = esc($livePosition['locality'] ?: '');
             $fHtml  = $livePosition['cc'] ? flag($livePosition['cc']) : '';
             $tsAttr = (int)$livePosition['time'];
             $liveCard = <<<HTML
-      <div class="step-card group relative flex gap-3 pb-6 px-1">
+      <div class="step-card group relative flex gap-3 pb-6 px-1" id="live-card">
         <div class="flex-shrink-0 flex flex-col items-center" style="width:38px">
           <button onclick="flyToLive()"
             class="relative w-9 h-9 rounded-full bg-red-500 flex items-center justify-center shadow ring-4 ring-gray-900 z-10 transition-transform group-hover:scale-110"
@@ -317,9 +348,13 @@ $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
 HTML;
         }
       ?>
-      <?php if ($liveCard && $sortOrder === 'desc') echo $liveCard; ?>
+      <?php if ($liveCard && $sortOrder === 'desc'): ?>
+        <?= $liveSep ?>
+        <?= $liveCard ?>
+      <?php endif; ?>
       <?php
-      $prevDay = null;
+      // In desc + live: seed $prevDay so the first step doesn't redraw the same day separator
+      $prevDay = ($livePosition && $sortOrder === 'desc' && $liveDayN > 0) ? $liveDayN : null;
       foreach ($steps as $i => $step):
         $dayN    = $tripStart ? dayNum(parseTs($step['start_time']), $tripStart) : ($i + 1);
         $isLast  = $i === array_key_last($steps);
@@ -480,7 +515,10 @@ HTML;
 
       <?php endforeach; ?>
 
-      <?php if ($liveCard && $sortOrder !== 'desc') echo $liveCard; ?>
+      <?php if ($liveCard && $sortOrder !== 'desc'): ?>
+        <?php if ($liveDayN > 0 && $liveDayN !== $prevDay) echo $liveSep; ?>
+        <?= $liveCard ?>
+      <?php endif; ?>
 
       <?php if ($likeCount > 0): ?>
       <div class="text-center pt-2 pb-4 text-xs text-gray-400">
@@ -567,22 +605,71 @@ function relTime(ts) {
   if (s < 86400*7)  return `il y a ${Math.floor(s / 86400)} j`;
   return new Date(ts * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
+function ccFlag(cc) {
+  cc = (cc || '').toUpperCase();
+  return cc.length === 2 && /^[A-Z]{2}$/.test(cc)
+    ? String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65)
+    : '';
+}
+function buildStepPopup(s) {
+  const flag  = s.cc ? `<span class="popup-flag">${ccFlag(s.cc)}</span>` : '';
+  const photo = s.thumb
+    ? `<div class="popup-photo" style="background-image:url('${s.thumb}')"></div>`
+    : '';
+  const where = s.locality
+    ? `<div class="popup-loc">📍 ${s.locality}</div>`
+    : (s.detail ? `<div class="popup-loc">📍 ${s.detail}</div>` : '');
+  const meta = s.day
+    ? `<div class="popup-meta">Jour ${s.day}${s.date ? ' · ' + s.date : ''}</div>`
+    : '';
+  return `${photo}<div class="popup-body"><div class="popup-num">#${s.num}</div>${meta}<div class="popup-title">${s.name}${flag}</div>${where}</div>`;
+}
+function buildLivePopup() {
+  const flag = LIVE_POS.cc ? `<span class="popup-flag">${ccFlag(LIVE_POS.cc)}</span>` : '';
+  const where = LIVE_POS.locality
+    ? `<div class="popup-title">${LIVE_POS.locality}${flag}</div>`
+    : (flag ? `<div class="popup-title">${flag}</div>` : '');
+  return `<div class="popup-body"><div class="popup-meta popup-meta-live"><span class="popup-live-dot"></span>Position actuelle</div>${where}<div class="popup-time">${relTime(LIVE_POS.time)}</div></div>`;
+}
+
+// Hover-to-open popup with grace delay so user can move into the popup itself.
+// Optional onContentClick: fired when the popup content is clicked (e.g. to scroll the timeline).
+function attachHoverPopup(marker, onContentClick) {
+  let closeTimer;
+  const cancel = () => clearTimeout(closeTimer);
+  const startClose = () => { cancel(); closeTimer = setTimeout(() => marker.closePopup(), 250); };
+  marker.off('click', marker._openPopup, marker);  // disable Leaflet's default click-toggle
+  marker.on('mouseover', () => { cancel(); marker.openPopup(); });
+  marker.on('mouseout',  startClose);
+  marker.on('popupopen', (e) => {
+    const el = e.popup.getElement();
+    if (!el) return;
+    el.addEventListener('mouseenter', cancel);
+    el.addEventListener('mouseleave', startClose);
+    if (onContentClick) {
+      const content = el.querySelector('.leaflet-popup-content');
+      if (content) {
+        content.style.cursor = 'pointer';
+        content.addEventListener('click', onContentClick);
+      }
+    }
+  });
+}
+
 if (LIVE_POS) {
   document.querySelectorAll('[data-live-time]').forEach(el => {
     el.textContent = relTime(parseInt(el.dataset.liveTime, 10));
   });
-  const cc = (LIVE_POS.cc || '').toUpperCase();
-  const flag = cc.length === 2
-    ? String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65) + ' '
-    : '';
-  const where = LIVE_POS.locality ? `${flag}${LIVE_POS.locality}` : flag.trim();
-  L.marker([LIVE_POS.lat, LIVE_POS.lon], {
+  const liveMarker = L.marker([LIVE_POS.lat, LIVE_POS.lon], {
     icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
       html: '<div class="live-pulse"><span></span><span></span><b></b></div>' }),
     zIndexOffset: 1000,
   })
-  .bindPopup(`<div style="font-size:12px;line-height:1.4"><strong style="color:#ef4444">⬤ Position actuelle</strong>${where ? '<br>'+where : ''}<br><span style="color:#888">${relTime(LIVE_POS.time)}</span></div>`, { offset: [0, -6] })
+  .bindPopup(buildLivePopup(), { offset: [0, -8], maxWidth: 240, className: 'gp-popup gp-popup-live', autoPan: false })
   .addTo(map);
+  const scrollToLive = () => document.getElementById('live-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  attachHoverPopup(liveMarker, scrollToLive);
+  liveMarker.on('click', () => { liveMarker.openPopup(); scrollToLive(); });
 }
 
 // Animate bikes along the route in a loop, 33% apart
@@ -851,9 +938,11 @@ const markers = MAP_STEPS.map((step, idx) => {
   }
   const size = step.thumb ? (isLast ? 36 : 30) : (isLast ? 14 : 11);
   const icon = L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size/2, size/2], html });
+  const popupOffsetY = step.thumb ? -(isLast ? 20 : 17) : -8;
   const m = L.marker([step.lat, step.lon], { icon, stepColor: color, stepThumb: step.thumb ?? null, stepIdx: idx })
-    .bindPopup(`<strong style="font-size:13px">${step.name}</strong>`, { offset: [0, -4] })
-    .on('click', () => scrollToStep(step.i));
+    .bindPopup(buildStepPopup(step), { offset: [0, popupOffsetY], maxWidth: 240, className: 'gp-popup', autoPan: false });
+  attachHoverPopup(m, () => scrollToStep(step.i));
+  m.on('click', () => { m.openPopup(); scrollToStep(step.i); });
   clusterGroup.addLayer(m);
   return m;
 });

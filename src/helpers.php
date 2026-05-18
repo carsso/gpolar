@@ -195,6 +195,25 @@ function htmlHead(string $title, bool $withLeaflet = false): string
     .live-pulse span:nth-child(2){animation-delay:.9s}
     .live-pulse b{position:absolute;top:50%;left:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#ef4444;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
     @keyframes live-pulse{0%{transform:scale(.5);opacity:.55}100%{transform:scale(2.4);opacity:0}}
+    .gp-popup .leaflet-popup-content-wrapper{background:#111827;color:#e5e7eb;border:1px solid #1f2937;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.65);padding:0;overflow:hidden}
+    .gp-popup .leaflet-popup-content{margin:0!important;width:240px!important;line-height:1.4}
+    .gp-popup .leaflet-popup-tip{background:#111827;border:1px solid #1f2937;box-shadow:0 8px 28px rgba(0,0,0,.65)}
+    .gp-popup .leaflet-popup-close-button{color:#e5e7eb!important;top:6px!important;right:6px!important;width:22px!important;height:22px!important;background:rgba(0,0,0,.5)!important;border-radius:50%!important;line-height:20px!important;font-size:18px!important;font-weight:400!important;text-align:center!important;text-decoration:none!important;backdrop-filter:blur(4px);z-index:2}
+    .gp-popup .leaflet-popup-close-button:hover{color:#fff!important;background:rgba(0,0,0,.75)!important}
+    .gp-popup-live .leaflet-popup-content-wrapper{border-color:rgba(239,68,68,.35)}
+    .gp-popup-live .leaflet-popup-tip{border-color:rgba(239,68,68,.35)}
+    .popup-photo{height:130px;background-size:cover;background-position:center;background-color:#1f2937;position:relative}
+    .popup-photo::after{content:'';position:absolute;inset:auto 0 0 0;height:50%;background:linear-gradient(to top,rgba(17,24,39,.7),transparent);pointer-events:none}
+    .popup-body{padding:10px 12px 12px;position:relative}
+    .popup-num{position:absolute;top:-12px;right:10px;background:#f59e0b;color:#111827;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.02em;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid #111827}
+    .popup-meta{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;font-weight:700;display:flex;align-items:center;gap:6px}
+    .popup-meta-live{color:#ef4444}
+    .popup-live-dot{width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;box-shadow:0 0 0 0 rgba(239,68,68,.6);animation:popup-live-pulse 1.6s ease-out infinite}
+    @keyframes popup-live-pulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.6)}70%{box-shadow:0 0 0 8px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+    .popup-title{font-size:13px;font-weight:600;color:#f3f4f6;margin-top:4px;line-height:1.3}
+    .popup-flag{margin-left:5px;font-size:14px;vertical-align:-1px}
+    .popup-loc{font-size:11px;color:#9ca3af;margin-top:6px;display:flex;align-items:center;gap:3px}
+    .popup-time{font-size:11px;color:#9ca3af;margin-top:6px}
   </style>
   <script>
   (function(){
