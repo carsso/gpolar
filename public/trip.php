@@ -193,6 +193,7 @@ $mapRoute = !empty($gpsHistory) ? $gpsHistory : $stepCoords;
 // Live position (only when trip is ongoing and we have GPS more recent than last step)
 $livePosition = null;
 $liveTrail    = [];
+$liveWeather  = null;
 if ($ongoing && !empty($gpsLive)) {
     $lastLive = end($zelda);
     $livePosition = [
@@ -205,6 +206,7 @@ if ($ongoing && !empty($gpsLive)) {
     $anchor = end($gpsHistory) ?: end($stepCoords);
     if ($anchor) $liveTrail[] = $anchor;
     foreach ($gpsLive as $p) $liveTrail[] = $p;
+    $liveWeather = fetchLiveWeather($livePosition['lat'], $livePosition['lon']);
 }
 
 $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP;
@@ -326,6 +328,17 @@ HTML;
             $locTxt = esc($livePosition['locality'] ?: '');
             $fHtml  = $livePosition['cc'] ? flag($livePosition['cc']) : '';
             $tsAttr = (int)$livePosition['time'];
+            $wHtml  = '';
+            if ($liveWeather) {
+                $wIcon = weatherIcon($liveWeather['condition']);
+                $wTemp = (int) $liveWeather['temp'];
+                $wHtml = <<<HTML
+            <div class="flex-shrink-0 flex flex-col items-center bg-gray-800 rounded-xl px-2.5 py-1.5 ml-2 text-center" title="Météo actuelle">
+              <span class="text-lg leading-none">{$wIcon}</span>
+              <span class="text-xs font-semibold text-gray-400 mt-0.5">{$wTemp}°C</span>
+            </div>
+HTML;
+            }
             $liveCard = <<<HTML
       <div class="step-card group relative flex gap-3 pb-6 px-1" id="live-card">
         <div class="flex-shrink-0 flex flex-col items-center" style="width:38px">
@@ -337,12 +350,17 @@ HTML;
           </button>
         </div>
         <div class="flex-1 bg-gray-900 rounded-2xl border border-red-900/40 shadow-sm p-4">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-[10px] font-bold text-red-500 uppercase tracking-widest">Position actuelle</span>
-            {$fHtml}
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[10px] font-bold text-red-500 uppercase tracking-widest">Position actuelle</span>
+                {$fHtml}
+              </div>
+              <div class="text-sm font-semibold text-gray-100 mt-1">{$locTxt}</div>
+              <div class="text-xs text-gray-500 mt-0.5" data-live-time="{$tsAttr}"></div>
+            </div>
+{$wHtml}
           </div>
-          <div class="text-sm font-semibold text-gray-100 mt-1">{$locTxt}</div>
-          <div class="text-xs text-gray-500 mt-0.5" data-live-time="{$tsAttr}"></div>
         </div>
       </div>
 HTML;
@@ -573,6 +591,8 @@ const MAP_STEPS   = <?= json_encode($mapSteps,    $jsonFlags) ?>;
 const MAP_ROUTE   = <?= json_encode($mapRoute,    $jsonFlags) ?>;
 const LIVE_POS    = <?= json_encode($livePosition, $jsonFlags) ?>;
 const LIVE_TRAIL  = <?= json_encode($liveTrail,    $jsonFlags) ?>;
+const LIVE_WEATHER = <?= json_encode($liveWeather, $jsonFlags) ?>;
+const WEATHER_ICONS = {"clear-day":"☀️","clear-night":"🌙","partly-cloudy-day":"⛅","partly-cloudy-night":"⛅","cloudy":"☁️","rain":"🌧️","thunderstorm":"⛈️","snow":"❄️","sleet":"❄️","wind":"💨","fog":"🌫️"};
 const HAS_GPS_TRAIL = <?= $hasGpsTrail ? 'true' : 'false' ?>;
 
 <?php if (!$error && !empty($mapRoute)): ?>
@@ -629,7 +649,10 @@ function buildLivePopup() {
   const where = LIVE_POS.locality
     ? `<div class="popup-title">${LIVE_POS.locality}${flag}</div>`
     : (flag ? `<div class="popup-title">${flag}</div>` : '');
-  return `<div class="popup-body"><div class="popup-meta popup-meta-live"><span class="popup-live-dot"></span>Position actuelle</div>${where}<div class="popup-time">${relTime(LIVE_POS.time)}</div></div>`;
+  const weather = LIVE_WEATHER
+    ? `<div class="popup-weather"><span class="popup-weather-icon">${WEATHER_ICONS[LIVE_WEATHER.condition] || '🌡️'}</span><span class="popup-weather-temp">${LIVE_WEATHER.temp}°C</span>${LIVE_WEATHER.wind != null ? `<span class="popup-weather-wind">💨 ${LIVE_WEATHER.wind} km/h</span>` : ''}</div>`
+    : '';
+  return `<div class="popup-body"><div class="popup-meta popup-meta-live"><span class="popup-live-dot"></span>Position actuelle</div>${where}${weather}<div class="popup-time">${relTime(LIVE_POS.time)}</div></div>`;
 }
 
 // Hover-to-open popup with grace delay so user can move into the popup itself.

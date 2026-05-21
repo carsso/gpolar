@@ -59,11 +59,80 @@ function weatherIcon(string $c): string
         'partly-cloudy-day', 'partly-cloudy-night' => '⛅',
         'cloudy'                                   => '☁️',
         'rain'                                     => '🌧️',
+        'thunderstorm'                             => '⛈️',
         'sleet', 'snow'                            => '❄️',
         'wind'                                     => '💨',
         'fog'                                      => '🌫️',
         default                                    => '🌡️',
     };
+}
+
+// WMO weather code → internal condition string (compatible with weatherIcon()).
+// Codes: https://open-meteo.com/en/docs (current.weather_code)
+function wmoToCondition(int $code, bool $isDay = true): string
+{
+    $suffix = $isDay ? 'day' : 'night';
+    if ($code === 0)                                            return "clear-{$suffix}";
+    if ($code === 1 || $code === 2)                             return "partly-cloudy-{$suffix}";
+    if ($code === 3)                                            return 'cloudy';
+    if ($code === 45 || $code === 48)                           return 'fog';
+    if (in_array($code, [71, 73, 75, 77, 85, 86], true))        return 'snow';
+    if ($code === 95 || $code === 96 || $code === 99)           return 'thunderstorm';
+    if (in_array($code, [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82], true)) return 'rain';
+    return 'cloudy';
+}
+
+/**
+ * Fetch current weather for a coordinate via Open-Meteo (no API key).
+ * Cached in data/weather/ at ~1km granularity, 15 min TTL.
+ * Returns ['temp' => int, 'condition' => string, 'wind' => ?int] or null.
+ */
+function fetchLiveWeather(float $lat, float $lon): ?array
+{
+    $key = sprintf('%.2f_%.2f', $lat, $lon);
+    $dir = __DIR__ . '/../data/weather';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $file = "{$dir}/{$key}.json";
+
+    if (is_file($file) && (time() - filemtime($file)) < 900) {
+        $cached = json_decode((string) file_get_contents($file), true);
+        if (is_array($cached)) return $cached;
+    }
+
+    // Opportunistic cleanup: on a cache miss, sweep entries older than 7 days.
+    $cutoff = time() - 7 * 86400;
+    foreach (glob("{$dir}/*.json") ?: [] as $old) {
+        if (filemtime($old) < $cutoff) @unlink($old);
+    }
+
+    $url = sprintf(
+        'https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code,is_day,wind_speed_10m&timezone=auto',
+        $lat, $lon
+    );
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_USERAGENT      => 'GPolar/1.0 (open-meteo)',
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code !== 200 || !$body) return null;
+    $data = json_decode($body, true);
+    $cur  = $data['current'] ?? null;
+    if (!is_array($cur) || !isset($cur['temperature_2m'])) return null;
+
+    $result = [
+        'temp'      => (int) round((float) $cur['temperature_2m']),
+        'condition' => wmoToCondition((int) ($cur['weather_code'] ?? -1), (bool) ($cur['is_day'] ?? true)),
+        'wind'      => isset($cur['wind_speed_10m']) ? (int) round((float) $cur['wind_speed_10m']) : null,
+    ];
+    @file_put_contents($file, json_encode($result));
+    return $result;
 }
 
 function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
@@ -214,6 +283,10 @@ function htmlHead(string $title, bool $withLeaflet = false): string
     .popup-flag{margin-left:5px;font-size:14px;vertical-align:-1px}
     .popup-loc{font-size:11px;color:#9ca3af;margin-top:6px;display:flex;align-items:center;gap:3px}
     .popup-time{font-size:11px;color:#9ca3af;margin-top:6px}
+    .popup-weather{margin-top:8px;display:flex;align-items:center;gap:8px;background:#1f2937;border-radius:8px;padding:5px 8px}
+    .popup-weather-icon{font-size:16px;line-height:1}
+    .popup-weather-temp{font-size:12px;font-weight:600;color:#e5e7eb}
+    .popup-weather-wind{font-size:10px;color:#9ca3af;margin-left:auto}
   </style>
   <script>
   (function(){
