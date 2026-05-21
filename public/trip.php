@@ -871,7 +871,7 @@ map.fitBounds(L.latLngBounds(FULL_ROUTE), { padding: [30, 30] });
 
 // Replace straight-line gaps (segments > GAP_THRESHOLD_KM) with OSRM road routing.
 // Real GPS pings are typically close together; large jumps mean tracking was off → fill with roads.
-const GAP_THRESHOLD_KM = 10;
+const GAP_THRESHOLD_KM = 30;
 function haversineKm(a, b) {
   const R = 6371, toRad = d => d * Math.PI / 180;
   const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
