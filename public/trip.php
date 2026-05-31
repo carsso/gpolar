@@ -557,29 +557,42 @@ HTML;
 </div>
 
 <!-- Lightbox -->
-<div id="lightbox" class="fixed inset-0 bg-black/92 z-50 flex items-center justify-center" onclick="closeLightbox()">
-  <button class="absolute top-4 right-5 text-white/60 hover:text-white text-3xl" onclick="closeLightbox()">✕</button>
-  <button class="absolute left-2 sm:left-5 text-white/60 hover:text-white text-5xl px-2 py-6"
-          onclick="event.stopPropagation(); lightboxNav(-1)">‹</button>
-  <img id="lightbox-img" src="" alt=""
-       class="max-h-screen max-w-full object-contain px-14 select-none"
-       onclick="event.stopPropagation()"
-       onerror="this.style.display='none';document.getElementById('lightbox-err').classList.remove('hidden')"
-       onload="this.style.display='';document.getElementById('lightbox-err').classList.add('hidden')">
-  <div id="lightbox-err" class="hidden text-center px-14">
-    <div class="text-4xl mb-3">🚫</div>
-    <p class="text-white/50 text-sm">Image non disponible</p>
+<div id="lightbox" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onclick="closeLightbox()">
+  <div class="relative bg-gray-950 rounded-2xl overflow-hidden flex flex-col w-[93vw] h-[93vh] max-w-6xl" onclick="event.stopPropagation()">
+    <!-- Top bar (overlay) -->
+    <div class="absolute top-0 inset-x-0 flex items-center justify-between px-3 pt-3 pb-2 z-20">
+      <a id="lightbox-dl" href="" download target="_blank"
+         class="w-9 h-9 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm text-white/75 hover:text-white hover:bg-black/75 transition-colors"
+         title="Télécharger l'original">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      </a>
+      <div id="lightbox-counter" class="h-9 flex items-center bg-black/55 backdrop-blur-sm text-white/90 text-sm font-medium px-3 rounded-full tabular-nums"></div>
+      <button class="w-9 h-9 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm text-white/75 hover:text-white hover:bg-black/75 transition-colors" onclick="closeLightbox()">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <!-- Image area -->
+    <div class="relative flex-1 min-h-0 flex items-center justify-center bg-black overflow-hidden">
+      <button class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm text-white/75 hover:text-white hover:bg-black/75 transition-colors z-10"
+              onclick="lightboxNav(-1)">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <img id="lightbox-img" src="" alt=""
+           class="max-h-full max-w-full object-contain select-none block"
+           onerror="this.style.display='none';document.getElementById('lightbox-err').classList.remove('hidden')"
+           onload="this.style.display='';document.getElementById('lightbox-err').classList.add('hidden')">
+      <div id="lightbox-err" class="hidden text-center">
+        <div class="text-4xl mb-3">🚫</div>
+        <p class="text-white/50 text-sm">Image non disponible</p>
+      </div>
+      <button class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/55 backdrop-blur-sm text-white/75 hover:text-white hover:bg-black/75 transition-colors z-10"
+              onclick="lightboxNav(1)">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+    <!-- Thumbnail strip -->
+    <div id="lightbox-strip" class="flex gap-2 overflow-x-auto px-3 py-3 flex-shrink-0 scroll-smooth"></div>
   </div>
-  <a id="lightbox-dl" href="" download target="_blank" onclick="event.stopPropagation()"
-     class="absolute top-4 left-5 text-white/40 hover:text-white transition-colors"
-     title="Télécharger l'original">
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-    </svg>
-  </a>
-  <button class="absolute right-2 sm:right-5 text-white/60 hover:text-white text-5xl px-2 py-6"
-          onclick="event.stopPropagation(); lightboxNav(1)">›</button>
-  <div id="lightbox-counter" class="absolute bottom-4 text-white/40 text-sm"></div>
 </div>
 
 <?php endif; ?>
@@ -1080,7 +1093,7 @@ async function loadComments(btn, stepId) {
 }
 
 // ── Lightbox ──────────────────────────────────────────────────────────────────
-let lbStep = 0, lbIdx = 0;
+let lbStep = 0, lbIdx = 0, lbStripStep = -1;
 
 function openLightbox(step, idx) {
   lbStep = step; lbIdx = idx;
@@ -1095,23 +1108,75 @@ function closeLightbox() {
 function lightboxNav(dir) {
   const thumbs = STEP_PHOTOS[lbStep]?.thumbs ?? [];
   lbIdx = (lbIdx + dir + thumbs.length) % thumbs.length;
-  renderLightbox();
+  renderLightbox(dir);
 }
-function renderLightbox() {
+function lightboxGoto(idx) {
+  const dir = idx > lbIdx ? 1 : idx < lbIdx ? -1 : 0;
+  lbIdx = idx;
+  renderLightbox(dir);
+}
+function renderLightbox(dir = 0) {
   const thumbs = STEP_PHOTOS[lbStep]?.thumbs ?? [];
   const full   = STEP_PHOTOS[lbStep]?.full   ?? [];
   const src = thumbs[lbIdx] || '';
   if (!src) { closeLightbox(); return; }
-  const img = document.getElementById('lightbox-img');
-  img.style.display = '';
-  document.getElementById('lightbox-err').classList.add('hidden');
-  img.src = src;
-  const dl = document.getElementById('lightbox-dl');
+  const img   = document.getElementById('lightbox-img');
+  const err   = document.getElementById('lightbox-err');
+  const dl    = document.getElementById('lightbox-dl');
+  const strip = document.getElementById('lightbox-strip');
   dl.href = full[lbIdx] || src;
-  dl.style.display = full[lbIdx] ? '' : 'none';
+  dl.style.visibility = full[lbIdx] ? '' : 'hidden';
   document.getElementById('lightbox-counter').textContent =
     thumbs.length > 1 ? `${lbIdx + 1} / ${thumbs.length}` : '';
+  // Thumbnail strip
+  if (thumbs.length > 1) {
+    strip.style.display = '';
+    if (lbStripStep !== lbStep) {
+      lbStripStep = lbStep;
+      strip.innerHTML = thumbs.map((t, i) =>
+        `<img src="${t}" data-idx="${i}" class="h-16 w-auto flex-shrink-0 rounded-lg object-cover cursor-pointer lb-thumb" alt="">`
+      ).join('');
+    }
+    Array.from(strip.children).forEach((el, i) => {
+      const active = i === lbIdx;
+      el.style.opacity = active ? '1' : '0.4';
+      el.style.outline = active ? '2px solid white' : 'none';
+      el.style.outlineOffset = '2px';
+    });
+    strip.children[lbIdx]?.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' });
+  } else {
+    strip.style.display = 'none';
+  }
+  // Image transition
+  if (dir !== 0) {
+    img.style.transition = 'opacity 0.08s ease, transform 0.08s ease';
+    img.style.opacity = '0';
+    img.style.transform = `translateX(${dir > 0 ? '-30px' : '30px'})`;
+    setTimeout(() => {
+      err.classList.add('hidden');
+      img.style.transition = 'none';
+      img.style.transform = `translateX(${dir > 0 ? '30px' : '-30px'})`;
+      img.style.display = '';
+      img.src = src;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        img.style.transition = 'opacity 0.12s ease, transform 0.12s ease';
+        img.style.opacity = '1';
+        img.style.transform = 'translateX(0)';
+      }));
+    }, 90);
+  } else {
+    img.style.transition = '';
+    img.style.opacity = '1';
+    img.style.transform = '';
+    img.style.display = '';
+    err.classList.add('hidden');
+    img.src = src;
+  }
 }
+document.getElementById('lightbox-strip').addEventListener('click', e => {
+  const th = e.target.closest('.lb-thumb');
+  if (th) lightboxGoto(parseInt(th.dataset.idx));
+});
 document.addEventListener('keydown', e => {
   if (!document.getElementById('lightbox').classList.contains('open')) return;
   if (e.key === 'Escape')     closeLightbox();
