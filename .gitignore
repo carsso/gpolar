@@ -17,3 +17,9 @@ Thumbs.db
 # Logs
 *.log
 /logs/
+
+# Graphify
+/graphify-out/
+
+# Claude Code
+/.claude/settings.local.json
