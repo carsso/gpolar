@@ -241,6 +241,10 @@ function htmlHead(string $title, bool $withLeaflet = false): string
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{$title} — GPolar</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#111827">
   <script src="https://cdn.tailwindcss.com"></script>{$leaflet}
   <style>
     .photo-scroll{scrollbar-width:thin;scrollbar-color:#4b5563 transparent}
