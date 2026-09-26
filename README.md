@@ -17,7 +17,7 @@ Interface sombre et rapide pour suivre les voyages à vélo de tes amis.
 - PHP 8.1+ (vanilla, pas de framework)
 - [Composer](https://getcomposer.org/)
 - [Tailwind CSS](https://tailwindcss.com/) via Play CDN
-- [Leaflet.js](https://leafletjs.com/) + tuiles CartoDB Dark
+- [Leaflet.js](https://leafletjs.com/) + tuiles satellite Esri
 
 ## Installation
 
