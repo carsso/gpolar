@@ -616,11 +616,60 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
   maxZoom: 19,
   className: 'map-sat',
 }).addTo(map);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-  attribution: '',
-  maxZoom: 19,
-  pane: 'shadowPane',
-}).addTo(map);
+// Surcouche de référence en français : routes, frontières et toponymes, tirée des
+// tuiles vectorielles OpenFreeMap (gratuites, sans clé). Repli sur la couche Esri,
+// en anglais, si WebGL manque ou si le style ne se charge pas.
+// Pane dédié entre les tuiles (200) et overlayPane (400) : la référence couvre le
+// satellite, mais passe sous le tracé du parcours et sous les marqueurs.
+map.createPane('refPane');
+Object.assign(map.getPane('refPane').style, { zIndex: 350, pointerEvents: 'none' });
+
+function addEsriLabels() {
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    pane: 'refPane',
+  }).addTo(map);
+}
+const REF_LAYERS = new Set(['transportation', 'transportation_name', 'boundary', 'place', 'water_name']);
+const REF_DROP   = /^(railway|road_pier|road_oneway|place_suburb)/;
+
+if (!window.maplibregl || !L.maplibreGL) {
+  addEsriLabels();
+} else {
+  fetch('https://tiles.openfreemap.org/styles/dark')
+    .then(r => r.json())
+    .then(style => {
+      // Ne garder que les traits et le texte : sans les remplissages, le satellite reste visible.
+      // Les calques *_casing sont les contours de routes : gardés, ils dessinent un
+      // liseré qui s'épaissit avec le zoom. On s'en passe, les routes sont sombres.
+      style.layers = style.layers.filter(l =>
+        REF_LAYERS.has(l['source-layer']) && l.type !== 'fill'
+        && !REF_DROP.test(l.id) && !l.id.endsWith('_casing'));
+      for (const l of style.layers) {
+        const lay = l.layout || (l.layout = {});
+        if (lay['text-field'] && JSON.stringify(lay['text-field']).includes('"name'))
+          lay['text-field'] = ['coalesce', ['get', 'name:fr'], ['get', 'name:latin'], ['get', 'name']];
+        if (l.type === 'symbol') {
+          l.paint = Object.assign({}, l.paint, {
+            'text-color': '#a8aeb8',
+            'text-halo-color': 'rgba(0,0,0,.85)',
+            'text-halo-width': 1.4,
+          });
+        } else if (l.type === 'line') {
+          // Routes sombres, hiérarchisées ; frontières claires pour les distinguer.
+          const color = l['source-layer'] === 'boundary' ? 'rgba(255,255,255,.26)'
+                      : /^highway_motorway/.test(l.id) ? 'rgba(0,0,0,.8)'
+                      : /^highway_major/.test(l.id) ? 'rgba(0,0,0,.65)'
+                      : 'rgba(0,0,0,.45)';
+          l.paint = Object.assign({}, l.paint, { 'line-color': color });
+        }
+      }
+      delete style.sources.ne2_shaded;
+      L.maplibreGL({ style, pane: 'refPane' }).addTo(map);
+      map.attributionControl.addAttribution('© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>');
+    })
+    .catch(addEsriLabels);
+}
 
 const routeLine = L.polyline(MAP_ROUTE, HAS_GPS_TRAIL
   ? { color: '#f59e0b', weight: 3, opacity: 0.8 }

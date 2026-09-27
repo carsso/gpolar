@@ -232,7 +232,10 @@ function htmlHead(string $title, bool $withLeaflet = false): string
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>' : '';
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css"/>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>' : '';
 
     return <<<HTML
 <!DOCTYPE html>
@@ -254,7 +257,7 @@ function htmlHead(string $title, bool $withLeaflet = false): string
     #lightbox{display:none}
     #lightbox.open{display:flex}
     .konami-gate{display:none}
-    .map-sat{filter:brightness(.4)}
+    .map-sat{filter:brightness(.55)}
     #map::after{content:'';position:absolute;inset:0;background:rgba(0,8,40,.75);pointer-events:none;z-index:300}
     .leaflet-bar a,.leaflet-bar a:hover{background:#1f2937;color:#e5e7eb;border-color:#374151}
     .leaflet-bar a:hover{background:#374151;color:#f59e0b}
